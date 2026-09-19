@@ -162,6 +162,15 @@ Any App Store app shows its real, full-color icon: the watch looks up the bundle
 - Call audio stays on the iPhone
 - The watch clock can't be set from the iPhone (Orbit shows a clock check instead)
 
+## Battery Impact
+
+Expect a modest cost: roughly **3–6% less battery life per day** (about an hour on a typical ~24 h charge), a bit more on very heavy notification days.
+
+- **Measured** on a Pixel Watch 3 (41 mm): over ~14 h of use, Orbit accounted for about **1.8% of all app CPU time** on the watch — and that window included heavy testing. It sleeps between events and only wakes briefly when the iPhone sends something.
+- **Estimated**: keeping the Bluetooth Low Energy link to the iPhone open costs roughly another **2–4%** per day. Wear OS doesn't attribute Bluetooth radio time to individual apps, so this part is an estimate rather than a measurement.
+- The screen wake and vibration for each notification cost the same as they would with a native Android pairing.
+- If the watch is still paired with an Android phone that stays in range, that phone's Bluetooth link adds its own drain on top. Turning that phone off (or its Bluetooth) recovers most of it.
+
 ## Contributing
 
 Contributions are welcome! Feel free to open issues or submit pull requests.
