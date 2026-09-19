@@ -1,0 +1,43 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+
+# Gradle
+.gradle/
+build/
+local.properties
+*.hprof
+
+# Android
+*.apk
+*.aab
+*.dex
+*.class
+*.so
+gen/
+out/
+captures/
+
+# Kotlin
+*.kotlin_module
+
+# The original WearBridge iOS companion app is not part of Orbit
+ios-app/
+
+# Misc
+*.log
+*.tmp
+*.bak
+*.orig

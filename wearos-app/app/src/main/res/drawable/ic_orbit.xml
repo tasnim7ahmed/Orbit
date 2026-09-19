@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Orbit status-bar / notification icon (24dp, white): phone with an orbiting watch -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M10,4 H14 A2,2 0 0 1 16,6 V18 A2,2 0 0 1 14,20 H10 A2,2 0 0 1 8,18 V6 A2,2 0 0 1 10,4 Z M10.4,5.6 H13.6 A1,1 0 0 1 14.6,6.6 V17.4 A1,1 0 0 1 13.6,18.4 H10.4 A1,1 0 0 1 9.4,17.4 V6.6 A1,1 0 0 1 10.4,5.6 Z" />
+    <group
+        android:pivotX="12"
+        android:pivotY="12"
+        android:rotation="-25">
+        <path
+            android:pathData="M2.5,12 A9.5,3.6 0 0,0 21.5,12"
+            android:strokeWidth="1.3"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeLineCap="round" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M19.8,14.1 m-2,0 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0" />
+    </group>
+</vector>
