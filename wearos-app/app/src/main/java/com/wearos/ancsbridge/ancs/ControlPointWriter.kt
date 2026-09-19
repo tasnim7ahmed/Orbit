@@ -19,12 +19,14 @@ object ControlPointWriter {
      * @param hasPositiveAction Whether to request the positive action label
      * @param hasNegativeAction Whether to request the negative action label
      * @param maxLength Maximum length for variable-length attributes
+     * @param maxMessageLength Maximum length for the message body
      */
     fun buildGetNotificationAttributes(
         uid: Long,
         hasPositiveAction: Boolean = false,
         hasNegativeAction: Boolean = false,
-        maxLength: Int = AncsConstants.DEFAULT_MAX_ATTRIBUTE_LENGTH
+        maxLength: Int = AncsConstants.DEFAULT_MAX_ATTRIBUTE_LENGTH,
+        maxMessageLength: Int = AncsConstants.MAX_MESSAGE_LENGTH
     ): ByteArray {
         val buffer = ByteArrayOutputStream()
 
@@ -47,7 +49,7 @@ object ControlPointWriter {
 
         // Message (attribute 3) — variable length
         buffer.write(AncsConstants.ATTR_MESSAGE)
-        writeUInt16LE(buffer, maxLength)
+        writeUInt16LE(buffer, maxMessageLength)
 
         // Date (attribute 5) — fixed length, no max-length param
         buffer.write(AncsConstants.ATTR_DATE)

@@ -76,8 +76,13 @@ object AncsConstants {
         ATTR_POSITIVE_ACTION_LABEL, ATTR_NEGATIVE_ACTION_LABEL
     )
 
-    // Default max length for variable-length attributes
+    // Default max length for variable-length attributes (in UTF-8 bytes; iOS cuts
+    // longer values and ends them with "…")
     const val DEFAULT_MAX_ATTRIBUTE_LENGTH = 255
+
+    // The message body gets more room so long messages and emails arrive in full.
+    // Bytes, not characters: Bengali and other non-Latin scripts use 3 bytes per character.
+    const val MAX_MESSAGE_LENGTH = 2048
 
     // ANCS Error Codes (returned via ATT error response)
     const val ERROR_UNKNOWN_COMMAND = 0xA0

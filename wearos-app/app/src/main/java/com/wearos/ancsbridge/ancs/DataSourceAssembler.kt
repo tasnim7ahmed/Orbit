@@ -216,7 +216,7 @@ class DataSourceAssembler {
             appDisplayName = null, // Fetched separately via GetAppAttributes
             title = attributes[AncsConstants.ATTR_TITLE] ?: "",
             subtitle = attributes[AncsConstants.ATTR_SUBTITLE],
-            message = attributes[AncsConstants.ATTR_MESSAGE] ?: "",
+            message = MessageText.clean(attributes[AncsConstants.ATTR_MESSAGE] ?: ""),
             date = attributes[AncsConstants.ATTR_DATE],
             categoryId = categoryId,
             eventFlags = eventFlags,

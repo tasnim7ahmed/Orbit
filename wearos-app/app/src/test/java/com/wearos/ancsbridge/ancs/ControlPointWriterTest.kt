@@ -43,6 +43,25 @@ class ControlPointWriterTest {
     }
 
     @Test
+    fun `message gets its own larger max length`() {
+        val data = ControlPointWriter.buildGetNotificationAttributes(uid = 7, hasPositiveAction = true)
+        val bytes = data.map { it.toInt() and 0xFF }
+
+        assertEquals(
+            listOf(
+                0x00, 0x07, 0x00, 0x00, 0x00, // command, UID
+                0x00,                         // AppIdentifier
+                0x01, 0xFF, 0x00,             // Title, 255
+                0x02, 0xFF, 0x00,             // Subtitle, 255
+                0x03, 0x00, 0x08,             // Message, 2048
+                0x05,                         // Date
+                0x06, 0xFF, 0x00              // PositiveActionLabel, 255
+            ),
+            bytes
+        )
+    }
+
+    @Test
     fun `buildGetNotificationAttributes with actions`() {
         val data = ControlPointWriter.buildGetNotificationAttributes(
             uid = 1,

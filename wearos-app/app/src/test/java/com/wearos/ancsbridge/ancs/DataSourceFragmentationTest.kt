@@ -25,11 +25,12 @@ class DataSourceFragmentationTest {
         AncsConstants.ATTR_DATE to "20260918T213000"
     )
 
-    private fun response(uid: Long): ByteArray {
+    private fun response(uid: Long, message: String = attrs.getValue(AncsConstants.ATTR_MESSAGE)): ByteArray {
         val out = ByteArrayOutputStream()
         out.write(AncsConstants.COMMAND_GET_NOTIFICATION_ATTRIBUTES)
         for (i in 0 until 4) out.write(((uid shr (8 * i)) and 0xFF).toInt())
-        for ((id, value) in attrs) {
+        for ((id, attrValue) in attrs) {
+            val value = if (id == AncsConstants.ATTR_MESSAGE) message else attrValue
             val bytes = value.toByteArray(Charsets.UTF_8)
             out.write(id)
             out.write(bytes.size and 0xFF)
@@ -66,6 +67,27 @@ class DataSourceFragmentationTest {
             assertEquals("split=$split", "See you at 7 — bring the charger", n.message)
             assertEquals("split=$split", "20260918T213000", n.date)
         }
+    }
+
+    @Test
+    fun parsesLongMessageSpanningSeveralNotifications() {
+        // Near MAX_MESSAGE_LENGTH, multi-byte characters, a length above 255 (both length
+        // bytes used), delivered in 512-byte chunks like at the negotiated MTU of 517
+        val message = "আমি ভালো আছি। ".repeat(50) + "End"
+        assertEquals(true, message.toByteArray(Charsets.UTF_8).size in 256..AncsConstants.MAX_MESSAGE_LENGTH)
+        val full = response(9, message)
+        val a = assembler(9)
+        var result: com.wearos.ancsbridge.model.AncsNotification? = null
+        var offset = 0
+        while (offset < full.size) {
+            val end = minOf(offset + 512, full.size)
+            val n = a.onDataReceived(full.copyOfRange(offset, end))
+            if (end < full.size) assertNull(n) else result = n
+            offset = end
+        }
+        assertNotNull(result)
+        assertEquals(message, result!!.message)
+        assertEquals("20260918T213000", result.date)
     }
 
     @Test
