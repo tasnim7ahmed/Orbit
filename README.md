@@ -4,120 +4,96 @@
 
 # Orbit
 
-Use a Wear OS watch with an iPhone. Orbit mirrors iPhone notifications and calls to the watch, controls iPhone music, and shows iPhone battery and link status — over Bluetooth Low Energy, using services built into iOS (ANCS, Apple Media Service, Battery, Current Time). Fully local, no cloud relay, and **no iPhone app required**.
+Orbit lets you use a Wear OS watch with an iPhone. Your iPhone notifications, calls and music show up on the watch, and you don't need to install anything on the iPhone.
 
-> **Built on [WearBridge](https://github.com/k97/WearBridge) by Karthik Rajendran** (MIT). WearBridge provided the foundation: the ANCS client (Notification Source parsing, Control Point requests, Data Source reassembly), BLE connection, bonding and reconnection, the Telecom-based incoming-call screen with Answer / Decline, and the notification channels and 75-app icon map. Orbit extends it with pairing without an iPhone app, Apple Media Service, Battery and Current Time services, two-way dismiss, real App Store icons, per-app settings, a tile and complications, continuous call ringing, and many reliability fixes. The original copyright notice is kept in [LICENSE](LICENSE).
-
-```
-iPhone (iOS)                             Wear OS Watch
-┌──────────────────────────┐             ┌──────────────────────────────┐
-│  ANCS  (notifications)   │             │  Orbit foreground service    │
-│  AMS   (now playing)     │◄─BLE bond──►│  GATT client + op queue      │
-│  Battery / Current Time  │             │  Notifications, calls, media │
-│  (all built into iOS)    │             │  Tile + complications        │
-└──────────────────────────┘             └──────────────────────────────┘
-```
+Based on [WearBridge](https://github.com/k97/WearBridge) by Karthik Rajendran (MIT license).
 
 ## Features
 
-### Pairing & connection
-- **Pairing without an iPhone app** — the watch advertises itself; pair from iPhone **Settings → Bluetooth**
-- **Auto-reconnect** — reconnects on its own after range loss, watch Bluetooth off/on, or a reboot
-- **Left-behind alert** — one buzz when the iPhone has been disconnected for 15 s; clears itself on reconnect
+**Pairing**
+- Pair from iPhone **Settings > Bluetooth**. No iPhone app needed.
+- Reconnects on its own after you walk out of range, turn Bluetooth off and on, or restart the watch.
+- Buzzes once if you leave your iPhone behind.
 
-### Notifications
-- **Real-time mirroring** — messages, email, calls, calendar and every other app, delivered in well under a second
-- **Real app icons** — each app's official App Store icon, fetched once and cached; iOS-style icons for Apple's built-in apps
-- **Two-way dismiss** — swipe away on the watch clears it on the iPhone, and clearing on the iPhone removes it from the watch; keeps working across reconnects, and clears made while disconnected sync once the iPhone is back
-- **Actions** — the iPhone's own notification buttons (e.g. "Clear", "Dial" on a missed call) work from the watch
-- **Stacks by app** — each app's notifications are grouped into one stack; dismissing the stack clears them all on the iPhone
-- **Quiet delivery** — notifications the iPhone delivers quietly (Focus, Deliver Quietly) show without buzzing
-- **Missed while away** — notifications that arrived while the watch was disconnected appear quietly after reconnect
-- **Updates without re-buzzing** — edited notifications refresh in place
+**Notifications**
+- Every iPhone notification shows up on the watch within a second.
+- Each app shows its real icon.
+- Long messages and emails show in full, not cut off. The hidden filler text that some emails add is removed.
+- Clear a notification on the watch and it clears on the iPhone. Clear it on the iPhone and it leaves the watch.
+- The iPhone's own notification buttons (like "Clear" or "Dial") work on the watch.
+- Notifications are grouped by app.
+- Quiet notifications on the iPhone (Focus, Deliver Quietly) stay quiet on the watch.
+- Notifications that arrived while the watch was away show up quietly when it reconnects.
 
-### Per-app settings (like the Apple Watch app)
-- **Alert / Quiet / Off** per iPhone app
-- **Haptic style** per app — Default, Tap, Double or Long
-- Feature toggles for stacks, Now Playing auto-open, the left-behind alert and missed notifications
+**Per-app settings**
+- Set each iPhone app to Alert, Quiet or Off.
+- Pick a vibration style per app: Default, Tap, Double or Long.
 
-### Calls
-- **Full-screen call screen** with the caller's name, even over the lock screen
-- **Keeps vibrating** until you answer, decline or silence it (side button), like an Apple Watch
-- **Answer / Decline act on the iPhone**; the watch shows "Active on iPhone" when you pick up there
-- **End Call** from the watch while a call is in progress
-- **WhatsApp and FaceTime calls** detected too
+**Calls**
+- A full-screen call screen with the caller's name, even on the lock screen.
+- The watch keeps vibrating until you answer, decline or press the side button.
+- Answer and Decline work on the iPhone. End Call works during a call.
+- WhatsApp and FaceTime calls work too.
 
-### Media (Apple Media Service)
-- **Now Playing** — title, artist, progress, play/pause, previous/next and volume for whatever plays on the iPhone (Spotify, Apple Music, YouTube, podcasts…)
-- **Digital Crown = iPhone volume**
-- **Auto-opens** when playback starts on the iPhone
-- **Ongoing activity** — a music icon on the watch face while something is playing, with controls in the notification
+**Music**
+- See what is playing on the iPhone and control it: play, pause, skip and volume.
+- Turn the crown to change the iPhone volume.
+- The music screen opens by itself when playback starts.
 
-### iPhone status
-- **iPhone battery** — on the home screen, in the ongoing notification, a complication and the tile
-- **Clock check** — compares the watch clock with the iPhone's and flags drift or a time-zone mismatch
+**iPhone status**
+- iPhone battery level on the home screen, a tile and a watch face complication.
+- A clock check that tells you if the watch time differs from the iPhone.
 
-### Watch surfaces
-- **"iPhone" tile** — connection, battery, current track and a Play/Pause button
-- **Complications** — "iPhone Battery" and "iPhone Now Playing" for any watch face
+**Watch face**
+- An "iPhone" tile with connection, battery and music controls.
+- "iPhone Battery" and "iPhone Now Playing" complications.
 
-### Built for the watch
-- Optimized release build (about 0.8 s cold start), crown scrolling, Wear OS themed-icon support
-- Fully local — the only network use is the one-time App Store icon lookup
+## Limitations
 
-## Upcoming (possible) features
+These need Apple's help, so they can't be done:
+- Replying to iMessage or SMS with typed text
+- iPhone alarms and timers on the watch
+- Taking call audio on the watch
+- Setting the watch clock from the iPhone
+- Apple Pay, Siri, unlocking the iPhone or Mac, and Activity rings
 
-- **Calls on the wrist** — the watch as the iPhone's Bluetooth hands-free device: talk through the watch speaker and mic, Wear OS's native phone UI, dialing from the watch (to be tested — Wear OS may reserve this for its companion phone)
-- **Native Wear OS media controls** over Classic Bluetooth (AVRCP), which would come with the above
-- **iPhone remote** — the watch as a Bluetooth HID device: iPhone Camera shutter, media keys, slide clicker, possibly a Siri key
-- **Heart-rate broadcast** — the watch as a standard heart-rate sensor for iPhone workout apps (Strava, Zwift, Peloton)
-- **"Ping my iPhone"** — make the iPhone play a sound to find it
-- **iCloud Calendar on the wrist** — next-event complication and agenda tile
-- **Multi-device pairing** — switch between iPhones or watches
+## Maybe Later
 
-Not possible without Apple's cooperation: typed iMessage/SMS replies, Apple Pay, unlocking the iPhone or Mac, Siri, Activity rings, Walkie-Talkie, iPhone Clock alarms, and setting the watch clock from the iPhone.
+- Take calls on the watch speaker and mic
+- Use the watch as a remote for the iPhone camera and music
+- "Ping my iPhone" to find it
+- iCloud Calendar on the watch
+- Switch between more than one iPhone or watch
 
-## Tested Hardware
+## Tested On
 
-| Device | Details |
+| Device | Version |
 |--------|---------|
 | iPhone 17 Pro | iOS 27 |
 | Google Pixel Watch 3 (41 mm) | Wear OS, Android 17 |
 
 ## How It Works
 
-ANCS and the other services are system-level BLE services built into iOS. Any bonded Bluetooth accessory can use them without an app on the iPhone.
+iOS has built-in Bluetooth services that any paired accessory can use. Orbit uses four of them: notifications (ANCS), music (Apple Media Service), battery and current time.
 
-1. **Pairing** — the watch advertises with an ANCS solicitation UUID; the iPhone lists it in Settings → Bluetooth and connects when you tap it
-2. **Session** — the watch bonds, subscribes to ANCS (Data Source, then Notification Source), then starts Battery, Current Time and Apple Media Service
-3. **Notifications** — 8-byte events arrive in real time; the watch fetches title, message, app ID and action labels via the Control Point, reassembles the fragmented response, and posts an Android notification
-4. **Actions** — Answer / Decline / End Call / Clear are sent back as ANCS actions; swiping a notification away sends "Clear"
-5. **Reconnects** — iOS renumbers notifications after a reconnect, so the watch re-links what it shows by content
+1. The watch makes itself visible to the iPhone. You tap it in Settings > Bluetooth.
+2. After pairing, the watch subscribes to the iPhone's notifications, music, battery and time.
+3. For each new notification, the watch asks the iPhone for the details and shows it.
+4. Buttons you tap on the watch (Answer, Decline, Clear) are sent back to the iPhone.
 
-Protocol details: [`docs/protocol.md`](docs/protocol.md).
+Protocol details are in [`docs/protocol.md`](docs/protocol.md).
 
-## Project Structure
+## Battery
 
-```
-├── wearos-app/          # Wear OS app (Kotlin, Jetpack Compose for Wear OS)
-│   └── app/src/main/java/com/wearos/ancsbridge/
-│       ├── ble/         # Connection manager, GATT callbacks + op queue, pairing advertiser,
-│       │                #   ANCS constants, Battery / Current Time / AMS (PhoneServices)
-│       ├── ancs/        # Foreground service, ANCS parsing, calls (Telecom + Ringer),
-│       │                #   app icons, notification actions, adb test injector
-│       ├── media/       # Now Playing ongoing activity + auto-open
-│       ├── surfaces/    # Complications and tile
-│       ├── settings/    # Per-app alert modes / haptics, feature toggles
-│       ├── model/       # Data classes, live iPhone status
-│       ├── ui/          # Home, pairing, Now Playing, settings, call screen
-│       └── viewmodel/   # ViewModel
-│
-└── master-docs/         # Research notes, ANCS spec references, app icon (Orbit/orbit-icon.svg)
-```
+Expect about **3 to 6% less battery per day** on the watch.
 
-## Build
+- On a Pixel Watch 3, Orbit used about 1.8% of all app CPU time during a day of heavy testing. It sleeps between notifications.
+- Keeping the Bluetooth link open adds about 2 to 4% per day. This part is an estimate, because Wear OS doesn't track Bluetooth use per app.
+- If the watch is still paired with an Android phone that stays nearby, that link uses extra battery. Turning that phone's Bluetooth off saves it.
 
-Gradle needs a JetBrains JDK 21 — Android Studio's bundled JBR works:
+## Build and Install
+
+Build with Android Studio's bundled Java (JBR 21):
 
 ```bash
 cd wearos-app
@@ -128,53 +104,44 @@ JAVA_HOME="C:/Program Files/Android/Android Studio/jbr" ./gradlew.bat testDebugU
   -Porg.gradle.java.installations.paths="C:/Program Files/Android/Android Studio/jbr"
 ```
 
-The release build is optimized with R8 and signed with the debug key for sideloading. Use it rather than the debug build, which is much slower on a watch. The package ID is still `com.wearos.ancsbridge` (kept from WearBridge so existing installs upgrade in place).
-
-Install on the watch via ADB (Pixel Watches have no USB data, so use Wi-Fi: Developer options → Wireless debugging):
+Install it on the watch over Wi-Fi ADB (turn on Developer options > Wireless debugging on the watch):
 
 ```bash
 adb install -r app/build/outputs/apk/release/app-release.apk
-# Needed for the incoming-call screen and Now Playing auto-open:
+# Lets the call screen and music screen open on their own:
 adb shell appops set com.wearos.ancsbridge SYSTEM_ALERT_WINDOW allow
 adb shell appops set com.wearos.ancsbridge USE_FULL_SCREEN_INTENT allow
 ```
 
+Use the release build. The debug build is much slower on a watch.
+
 ## Setup
 
-1. Install the APK on your Wear OS watch and grant the Bluetooth + notification permissions
-2. In Orbit, tap **Pair New Device** → **Start Pairing** (the watch is discoverable for 3 minutes)
-3. On the iPhone, open **Settings → Bluetooth** and tap the watch's name (shown on the watch)
-4. Tap **Pair**, then **Allow** when iOS asks to share notifications
-5. Notifications start mirroring automatically
+1. Open Orbit on the watch and allow the permissions it asks for.
+2. Tap **Pair New Device**, then **Start Pairing**.
+3. On the iPhone, open **Settings > Bluetooth** and tap the watch's name.
+4. Tap **Pair**, then **Allow** when the iPhone asks to share notifications.
 
-If the watch doesn't appear in Settings → Bluetooth, connect to it once from any BLE scanner app (e.g. nRF Connect, LightBlue) — the watch then requests pairing itself.
+That's it. Notifications start right away.
 
-Optional: add the **iPhone** tile, and the **iPhone Battery** / **iPhone Now Playing** complications from the watch face editor. Per-app and feature settings are under **Settings** in Orbit.
+If the watch doesn't show up in Settings > Bluetooth, connect to it once with a Bluetooth scanner app like nRF Connect. The watch will then ask to pair.
 
-## App Icons
+You can also add the **iPhone** tile and the complications from the watch face editor. App settings are under **Settings** in Orbit.
 
-Any App Store app shows its real, full-color icon: the watch looks up the bundle ID with Apple's public App Store lookup API the first time the app notifies, then caches the icon. Apple's built-in apps (Messages, Phone, Mail, …) get an iOS-style generated icon. The small notification-header icon is always Orbit's (Android shows the posting app's own icon there).
+## Project Structure
 
-## Limitations
-
-- No typed replies to iMessage/SMS (ANCS only exposes the iPhone's action buttons)
-- iPhone Clock alarms and timers don't reach the watch
-- Call audio stays on the iPhone
-- The watch clock can't be set from the iPhone (Orbit shows a clock check instead)
-
-## Battery Impact
-
-Expect a modest cost: roughly **3–6% less battery life per day** (about an hour on a typical ~24 h charge), a bit more on very heavy notification days.
-
-- **Measured** on a Pixel Watch 3 (41 mm): over ~14 h of use, Orbit accounted for about **1.8% of all app CPU time** on the watch — and that window included heavy testing. It sleeps between events and only wakes briefly when the iPhone sends something.
-- **Estimated**: keeping the Bluetooth Low Energy link to the iPhone open costs roughly another **2–4%** per day. Wear OS doesn't attribute Bluetooth radio time to individual apps, so this part is an estimate rather than a measurement.
-- The screen wake and vibration for each notification cost the same as they would with a native Android pairing.
-- If the watch is still paired with an Android phone that stays in range, that phone's Bluetooth link adds its own drain on top. Turning that phone off (or its Bluetooth) recovers most of it.
-
-## Contributing
-
-Contributions are welcome! Feel free to open issues or submit pull requests.
+```
+wearos-app/app/src/main/java/com/wearos/ancsbridge/
+├── ble/        Bluetooth connection, pairing, iPhone services
+├── ancs/       Notifications, calls, app icons
+├── media/      Now Playing
+├── surfaces/   Tile and complications
+├── settings/   Per-app settings
+├── model/      Data classes
+├── ui/         Watch screens
+└── viewmodel/  Screen state
+```
 
 ## License
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+MIT. See [LICENSE](LICENSE).
