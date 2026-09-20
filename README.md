@@ -91,7 +91,22 @@ Expect about **3 to 6% less battery per day** on the watch.
 - Keeping the Bluetooth link open adds about 2 to 4% per day. This part is an estimate, because Wear OS doesn't track Bluetooth use per app.
 - If the watch is still paired with an Android phone that stays nearby, that link uses extra battery. Turning that phone's Bluetooth off saves it.
 
-## Build and Install
+## Install
+
+Download `orbit.apk` from the [latest release](https://github.com/tasnim7ahmed/Orbit/releases/latest).
+
+Turn on Developer options and Wireless debugging on the watch (Settings > System > About > Versions, tap Build number seven times), then pair your computer with `adb pair` and install:
+
+```bash
+adb install orbit.apk
+# Lets the call screen and music screen open on their own:
+adb shell appops set com.wearos.ancsbridge SYSTEM_ALERT_WINDOW allow
+adb shell appops set com.wearos.ancsbridge USE_FULL_SCREEN_INTENT allow
+```
+
+Pixel Watches have no USB data connection, so Wi-Fi ADB is the way in.
+
+## Build It Yourself
 
 Build with Android Studio's bundled Java (JBR 21):
 
@@ -104,16 +119,9 @@ JAVA_HOME="C:/Program Files/Android/Android Studio/jbr" ./gradlew.bat testDebugU
   -Porg.gradle.java.installations.paths="C:/Program Files/Android/Android Studio/jbr"
 ```
 
-Install it on the watch over Wi-Fi ADB (turn on Developer options > Wireless debugging on the watch):
+Then install `app/build/outputs/apk/release/app-release.apk` as above. Use the release build; the debug build is much slower on a watch.
 
-```bash
-adb install -r app/build/outputs/apk/release/app-release.apk
-# Lets the call screen and music screen open on their own:
-adb shell appops set com.wearos.ancsbridge SYSTEM_ALERT_WINDOW allow
-adb shell appops set com.wearos.ancsbridge USE_FULL_SCREEN_INTENT allow
-```
-
-Use the release build. The debug build is much slower on a watch.
+Your own build is signed with the debug key, so it will not install on top of a release download. Uninstall first if you want to switch between them.
 
 ## Setup
 

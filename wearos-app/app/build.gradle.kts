@@ -1,7 +1,21 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+/**
+ * Release signing details, kept outside the repository. Point ORBIT_KEYSTORE_PROPERTIES
+ * at the file, or place it at ../../orbit-signing/keystore.properties. Without it the
+ * release build falls back to the debug key, so anyone can still clone and build.
+ */
+val keystoreProperties: Properties? = run {
+    val path = System.getenv("ORBIT_KEYSTORE_PROPERTIES")
+        ?: rootProject.file("../../orbit-signing/keystore.properties").path
+    val file = File(path)
+    if (!file.exists()) null else Properties().apply { file.inputStream().use { load(it) } }
 }
 
 android {
@@ -16,13 +30,25 @@ android {
         versionName = "1.0"
     }
 
+    signingConfigs {
+        if (keystoreProperties != null) {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            // Sideloaded personal build: sign with the debug key so `adb install`
-            // works without a release keystore. Swap for a real key before publishing.
-            signingConfig = signingConfigs.getByName("debug")
+            // Published builds are signed with the private release key. Without it
+            // (a fresh clone) the debug key is used, which still installs over adb.
+            signingConfig = signingConfigs.findByName("release")
+                ?: signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

@@ -41,3 +41,8 @@ ios-app/
 *.tmp
 *.bak
 *.orig
+
+# Release signing material (kept outside the repo, never commit)
+*.jks
+*.keystore
+keystore.properties
