@@ -1,6 +1,7 @@
 package com.wearos.ancsbridge.ancs
 
 import android.annotation.SuppressLint
+import android.app.AlarmManager
 import android.app.Notification
 import android.graphics.Bitmap
 import android.app.NotificationManager
@@ -75,6 +76,8 @@ class AncsService : Service() {
         const val ACTION_NOTIFICATION_DISMISSED = "com.wearos.ancsbridge.NOTIFICATION_DISMISSED"
         const val ACTION_GROUP_DISMISSED = "com.wearos.ancsbridge.GROUP_DISMISSED"
         const val ACTION_SILENCE_RING = "com.wearos.ancsbridge.SILENCE_RING"
+        /** Internal: the alarm that runs the next reconnect advertising burst. */
+        const val ACTION_ADVERTISE_BURST = "com.wearos.ancsbridge.ADVERTISE_BURST"
         const val ACTION_DEBUG_INJECT = "com.wearos.ancsbridge.DEBUG_INJECT"
         const val EXTRA_NOTIFICATION_ID = "notification_id"
         const val EXTRA_BUNDLE_ID = "bundle_id"
@@ -83,12 +86,13 @@ class AncsService : Service() {
         // Writing the link timestamp every 30 s woke the CPU ~2,900 times a day; 5 minutes
         // is accurate enough for the "missed while away" window.
         private const val LINK_HEARTBEAT_MS = 300_000L
-        // Reconnect advertising while the iPhone is away: continuous at first, then bursts
-        private const val ADVERTISE_CONTINUOUS_MS = 300_000L
-        private const val ADVERTISE_BURST_MS = 10_000L
-        private const val ADVERTISE_GAP_MS = 60_000L
+        // Reconnect advertising while the iPhone is away. 180 s is the longest the
+        // Bluetooth controller accepts for one advertising run.
+        private const val ADVERTISE_FIRST_MS = 180_000L
+        private const val ADVERTISE_BURST_MS = 30_000L
+        private const val ADVERTISE_GAP_MS = 120_000L
         private const val ADVERTISE_SLOW_AFTER_MS = 1_800_000L
-        private const val ADVERTISE_SLOW_GAP_MS = 300_000L
+        private const val ADVERTISE_SLOW_GAP_MS = 900_000L
         private const val SCREEN_RETRY_COOLDOWN_MS = 120_000L
         private const val PREF_LAST_LINK_UP = "last_link_up_at"
         private const val PREF_NEXT_NOTIF_ID = "next_notification_id"
@@ -175,7 +179,8 @@ class AncsService : Service() {
     private var linkHeartbeatJob: Job? = null
     private var leftBehindJob: Job? = null
     private var surfaceUpdateJob: Job? = null
-    private var reconnectAdvertisingJob: Job? = null
+    /** When the iPhone link went down, for deciding how often to advertise. 0 = link is up. */
+    private var awaySince = 0L
     private var lastScreenOnRetry = 0L
 
     // Serial queue for Control Point requests
@@ -332,6 +337,7 @@ class AncsService : Service() {
                 ids.forEach { onWatchDismissed(it) }
             }
             ACTION_SILENCE_RING -> ringer.stop("silenced on watch")
+            ACTION_ADVERTISE_BURST -> onAdvertiseBurstAlarm()
             ACTION_DEBUG_INJECT -> DebugInjector.handle(
                 intent, this::debugPost, this::debugCall, this::debugRemove,
                 // Like a real swipe, which knows the watch notification ID even after a reconnect
@@ -438,26 +444,58 @@ class AncsService : Service() {
      * so looking at the watch after coming home reconnects quickly.
      */
     private fun startReconnectAdvertising() {
-        if (reconnectAdvertisingJob?.isActive == true) return
-        reconnectAdvertisingJob = scope.launch {
-            val startedAt = SystemClock.elapsedRealtime()
-            advertiser.start(fast = false)
-            kotlinx.coroutines.delay(ADVERTISE_CONTINUOUS_MS)
-            while (isActive) {
-                advertiser.stop()
-                val away = SystemClock.elapsedRealtime() - startedAt
-                val gap = if (away > ADVERTISE_SLOW_AFTER_MS) ADVERTISE_SLOW_GAP_MS else ADVERTISE_GAP_MS
-                kotlinx.coroutines.delay(gap)
-                // The controller ends the burst on time even if the watch sleeps through it
-                advertiser.start(fast = false, timeoutMs = ADVERTISE_BURST_MS.toInt())
-                kotlinx.coroutines.delay(ADVERTISE_BURST_MS)
-            }
+        if (awaySince == 0L) awaySince = SystemClock.elapsedRealtime()
+        advertiseBurst(ADVERTISE_FIRST_MS)
+    }
+
+    /**
+     * One advertising burst. The length is set on the advertiser itself, so the Bluetooth
+     * controller ends it on time even if the watch's CPU sleeps through it. A coroutine
+     * timer can't do this: its delay freezes while the CPU is suspended, which is most of
+     * the time on a sleeping watch.
+     */
+    private fun advertiseBurst(lengthMs: Long) {
+        advertiser.start(fast = false, timeoutMs = lengthMs.toInt())
+        val away = SystemClock.elapsedRealtime() - awaySince
+        val next = if (away > ADVERTISE_SLOW_AFTER_MS) ADVERTISE_SLOW_GAP_MS else ADVERTISE_GAP_MS
+        scheduleNextBurst(next)
+    }
+
+    /**
+     * Inexact wake-up alarm for the next burst. Exact alarms aren't permitted here, and
+     * inexact ones are the cheaper choice anyway: the system fires them together with
+     * other work it already had to wake up for.
+     */
+    private fun scheduleNextBurst(delayMs: Long) {
+        val alarmManager = getSystemService(AlarmManager::class.java)
+        alarmManager.setAndAllowWhileIdle(
+            AlarmManager.ELAPSED_REALTIME_WAKEUP,
+            SystemClock.elapsedRealtime() + delayMs,
+            advertiseBurstIntent()
+        )
+    }
+
+    private fun advertiseBurstIntent(): PendingIntent = PendingIntent.getService(
+        this, 40,
+        Intent(this, AncsService::class.java).setAction(ACTION_ADVERTISE_BURST),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+
+    /** Alarm fired: advertise again, unless the iPhone is back or pairing took over. */
+    private fun onAdvertiseBurstAlarm() {
+        if (connectionManager.connectionState.value is ConnectionState.Connected ||
+            _pairingState.value != PairingState.Off ||
+            connectionManager.getBondedIPhone() == null
+        ) {
+            stopReconnectAdvertising()
+            return
         }
+        advertiseBurst(ADVERTISE_BURST_MS)
     }
 
     private fun stopReconnectAdvertising() {
-        reconnectAdvertisingJob?.cancel()
-        reconnectAdvertisingJob = null
+        awaySince = 0L
+        getSystemService(AlarmManager::class.java).cancel(advertiseBurstIntent())
         advertiser.stop()
     }
 
@@ -470,8 +508,8 @@ class AncsService : Service() {
             val now = SystemClock.elapsedRealtime()
             if (now - lastScreenOnRetry < SCREEN_RETRY_COOLDOWN_MS) return
             lastScreenOnRetry = now
-            stopReconnectAdvertising()
-            startReconnectAdvertising()
+            // You're looking at the watch, so this is when a reconnect matters
+            advertiseBurst(ADVERTISE_FIRST_MS)
         }
     }
 
@@ -497,6 +535,10 @@ class AncsService : Service() {
         if (device != null) {
             Log.i(TAG, "Found bonded device: ${device.name ?: device.address}")
             connectionManager.reconnect(device)
+            // Our own connection attempt sits pending with no callback while the iPhone is
+            // out of range, so advertise as well and let the iPhone come to us. Stops as
+            // soon as either side succeeds.
+            if (_pairingState.value == PairingState.Off) startReconnectAdvertising()
         } else {
             Log.i(TAG, "No bonded iPhone found")
         }
