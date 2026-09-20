@@ -36,6 +36,8 @@ class BleConnectionManager(private val context: Context) {
         private const val TAG = "BleConnectionManager"
         private const val MAX_RECONNECT_DELAY_MS = 30_000L
         private const val INITIAL_RECONNECT_DELAY_MS = 3_000L
+        /** Wait before asking for a slower connection interval, so setup traffic stays fast. */
+        private const val LOW_POWER_SETTLE_MS = 10_000L
         private const val TARGET_MTU = 512
         private const val MAX_SERVICE_DISCOVERY_RETRIES = 2
         private const val PREFS_NAME = "wearbridge"
@@ -248,6 +250,18 @@ class BleConnectionManager(private val context: Context) {
                     readGapDeviceName()
                     // iPhone battery, clock check, media controls
                     gatt?.let { phoneServices.start(it) }
+                    // Once the session has settled, ask for a slower connection interval.
+                    // Fewer radio wake-ups on both sides; ANCS events still arrive in
+                    // well under a second.
+                    scope.launch {
+                        delay(LOW_POWER_SETTLE_MS)
+                        if (ancsSubscribed) {
+                            val accepted = gatt?.requestConnectionPriority(
+                                BluetoothGatt.CONNECTION_PRIORITY_LOW_POWER
+                            )
+                            Log.i(TAG, "Low-power connection interval requested: $accepted")
+                        }
+                    }
                 }
             }
 

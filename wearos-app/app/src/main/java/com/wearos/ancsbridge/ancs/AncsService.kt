@@ -13,6 +13,7 @@ import android.content.Context
 import android.content.IntentFilter
 import android.content.Intent
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.wearos.ancsbridge.AncsApplication
@@ -40,6 +41,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -78,7 +80,16 @@ class AncsService : Service() {
         const val EXTRA_BUNDLE_ID = "bundle_id"
         const val NOTIFICATION_ID_LEFT_BEHIND = 996
         private const val LEFT_BEHIND_DELAY_MS = 15_000L
-        private const val LINK_HEARTBEAT_MS = 30_000L
+        // Writing the link timestamp every 30 s woke the CPU ~2,900 times a day; 5 minutes
+        // is accurate enough for the "missed while away" window.
+        private const val LINK_HEARTBEAT_MS = 300_000L
+        // Reconnect advertising while the iPhone is away: continuous at first, then bursts
+        private const val ADVERTISE_CONTINUOUS_MS = 300_000L
+        private const val ADVERTISE_BURST_MS = 10_000L
+        private const val ADVERTISE_GAP_MS = 60_000L
+        private const val ADVERTISE_SLOW_AFTER_MS = 1_800_000L
+        private const val ADVERTISE_SLOW_GAP_MS = 300_000L
+        private const val SCREEN_RETRY_COOLDOWN_MS = 120_000L
         private const val PREF_LAST_LINK_UP = "last_link_up_at"
         private const val PREF_NEXT_NOTIF_ID = "next_notification_id"
         // Keeps notifId + 1_000_000 (dismiss request codes) below the summary range (2_000_000+)
@@ -90,7 +101,8 @@ class AncsService : Service() {
         const val EXTRA_ACTION_ID = "action_id"
         const val NOTIFICATION_ID_CALL = 999
         private const val MAX_ACTIVE_NOTIFICATIONS = 20 // Android limit is 25; keep headroom
-        private const val ATTRIBUTE_RESPONSE_TIMEOUT_MS = 3_000L
+        // Long messages over a low-power connection interval need more than 3 s
+        private const val ATTRIBUTE_RESPONSE_TIMEOUT_MS = 6_000L
         private const val PAIRING_WINDOW_MS = 180_000L
 
         /** Shared connection state observable by the ViewModel */
@@ -163,6 +175,8 @@ class AncsService : Service() {
     private var linkHeartbeatJob: Job? = null
     private var leftBehindJob: Job? = null
     private var surfaceUpdateJob: Job? = null
+    private var reconnectAdvertisingJob: Job? = null
+    private var lastScreenOnRetry = 0L
 
     // Serial queue for Control Point requests
     private val attributeRequestQueue = Channel<AttributeRequest>(Channel.BUFFERED)
@@ -190,6 +204,7 @@ class AncsService : Service() {
         // Register bond state receiver
         registerReceiver(connectionManager.bondStateReceiver, BondStateReceiver.intentFilter)
         registerReceiver(adapterStateReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
+        registerReceiver(screenOnReceiver, IntentFilter(Intent.ACTION_SCREEN_ON))
 
         // Register PhoneAccount for Telecom framework integration
         // This lets us show incoming calls via the system call UI
@@ -240,14 +255,14 @@ class AncsService : Service() {
                 when (state) {
                     is ConnectionState.Connected -> {
                         stopPairing()
-                        advertiser.stop()
+                        stopReconnectAdvertising()
                         onLinkUp()
                     }
                     // Unexpected drop: advertise (low power) so the bonded iPhone can
                     // reconnect to us, in parallel with our own autoConnect attempts.
                     is ConnectionState.Disconnected -> {
                         if (_pairingState.value == PairingState.Off && connectionManager.getBondedIPhone() != null) {
-                            advertiser.start(fast = false)
+                            startReconnectAdvertising()
                         }
                         onLinkDown(unexpected = true)
                     }
@@ -270,7 +285,7 @@ class AncsService : Service() {
             }
             ACTION_DISCONNECT -> {
                 stopPairing()
-                advertiser.stop()
+                stopReconnectAdvertising()
                 connectionManager.disconnect()
             }
             ACTION_MEDIA_COMMAND -> {
@@ -327,7 +342,7 @@ class AncsService : Service() {
             )
             ACTION_STOP -> {
                 stopPairing()
-                advertiser.stop()
+                stopReconnectAdvertising()
                 connectionManager.disconnect()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -346,6 +361,10 @@ class AncsService : Service() {
         try {
             unregisterReceiver(adapterStateReceiver)
         } catch (_: IllegalArgumentException) { }
+        try {
+            unregisterReceiver(screenOnReceiver)
+        } catch (_: IllegalArgumentException) { }
+        stopReconnectAdvertising()
         advertiser.destroy()
         ringer.stop("service destroyed")
         nowPlaying.stop()
@@ -365,6 +384,8 @@ class AncsService : Service() {
             _pairingState.value = PairingState.Failed("This watch can't advertise over BLE")
             return
         }
+        // Pairing takes over from any reconnect advertising in progress
+        stopReconnectAdvertising()
         advertiser.start(fast = true)
         _pairingState.value = PairingState.Advertising(advertiser.advertisedName)
         Log.i(TAG, "Pairing mode on — watch visible as '${advertiser.advertisedName}'")
@@ -407,18 +428,65 @@ class AncsService : Service() {
         connectionManager.connect(device)
     }
 
+    /**
+     * Advertise so the bonded iPhone can find us again, without burning the radio all day
+     * when it simply isn't around.
+     *
+     * Right after a drop the watch advertises without a break, which covers the usual case
+     * of walking out of range and coming back. After that it advertises in short bursts,
+     * rarer the longer the iPhone stays away. A screen wake restarts the continuous phase,
+     * so looking at the watch after coming home reconnects quickly.
+     */
+    private fun startReconnectAdvertising() {
+        if (reconnectAdvertisingJob?.isActive == true) return
+        reconnectAdvertisingJob = scope.launch {
+            val startedAt = SystemClock.elapsedRealtime()
+            advertiser.start(fast = false)
+            kotlinx.coroutines.delay(ADVERTISE_CONTINUOUS_MS)
+            while (isActive) {
+                advertiser.stop()
+                val away = SystemClock.elapsedRealtime() - startedAt
+                val gap = if (away > ADVERTISE_SLOW_AFTER_MS) ADVERTISE_SLOW_GAP_MS else ADVERTISE_GAP_MS
+                kotlinx.coroutines.delay(gap)
+                // The controller ends the burst on time even if the watch sleeps through it
+                advertiser.start(fast = false, timeoutMs = ADVERTISE_BURST_MS.toInt())
+                kotlinx.coroutines.delay(ADVERTISE_BURST_MS)
+            }
+        }
+    }
+
+    private fun stopReconnectAdvertising() {
+        reconnectAdvertisingJob?.cancel()
+        reconnectAdvertisingJob = null
+        advertiser.stop()
+    }
+
+    /** Wrist raise or a button press while the iPhone is away: try harder for a moment. */
+    private val screenOnReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (connectionManager.connectionState.value is ConnectionState.Connected) return
+            if (_pairingState.value != PairingState.Off) return
+            if (connectionManager.getBondedIPhone() == null) return
+            val now = SystemClock.elapsedRealtime()
+            if (now - lastScreenOnRetry < SCREEN_RETRY_COOLDOWN_MS) return
+            lastScreenOnRetry = now
+            stopReconnectAdvertising()
+            startReconnectAdvertising()
+        }
+    }
+
     /** Watch Bluetooth toggled (airplane mode, settings, …): GATT gives no callback for this. */
     private val adapterStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)) {
                 BluetoothAdapter.STATE_TURNING_OFF, BluetoothAdapter.STATE_OFF -> {
-                    advertiser.stop()
+                    stopReconnectAdvertising()
                     connectionManager.onAdapterOff()
                 }
                 BluetoothAdapter.STATE_ON -> {
                     Log.i(TAG, "Bluetooth back on — reconnecting to iPhone")
                     tryReconnectBonded()
-                    if (connectionManager.getBondedIPhone() != null) advertiser.start(fast = false)
+                    if (connectionManager.getBondedIPhone() != null) startReconnectAdvertising()
                 }
             }
         }

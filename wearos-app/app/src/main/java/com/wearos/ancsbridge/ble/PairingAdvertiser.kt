@@ -40,11 +40,23 @@ class PairingAdvertiser(
     }
 
     private var gattServer: BluetoothGattServer? = null
-    private var isAdvertising = false
+    private var advertisingFlag = false
+
+    /** Elapsed time a timed burst ends at; the controller stops it without telling us. */
+    private var advertisingEndsAt = 0L
+
+    private var isAdvertising: Boolean
+        get() = advertisingFlag &&
+            (advertisingEndsAt == 0L || android.os.SystemClock.elapsedRealtime() < advertisingEndsAt)
+        set(value) {
+            advertisingFlag = value
+            if (!value) advertisingEndsAt = 0L
+        }
     private var includeName = true
 
     /** Mode the current advertising was started in (pairing = fast, reconnect = low power). */
     private var fastMode = false
+    private var currentTimeoutMs = 0
 
     private val gattServerCallback = object : BluetoothGattServerCallback() {
         override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
@@ -59,8 +71,11 @@ class PairingAdvertiser(
 
     private val advertiseCallback = object : AdvertiseCallback() {
         override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
-            Log.i(TAG, "Advertising started (fast=$fastMode, name=$includeName)")
+            Log.i(TAG, "Advertising started (fast=$fastMode, timeout=${currentTimeoutMs}ms, name=$includeName)")
             isAdvertising = true
+            advertisingEndsAt = if (currentTimeoutMs > 0) {
+                android.os.SystemClock.elapsedRealtime() + currentTimeoutMs
+            } else 0L
         }
 
         override fun onStartFailure(errorCode: Int) {
@@ -69,7 +84,7 @@ class PairingAdvertiser(
             // Long adapter names overflow the 31-byte scan response — retry without it.
             if (errorCode == ADVERTISE_FAILED_DATA_TOO_LARGE && includeName) {
                 includeName = false
-                start(fastMode)
+                start(fastMode, currentTimeoutMs)
             }
         }
     }
@@ -85,8 +100,11 @@ class PairingAdvertiser(
      * Start advertising.
      * @param fast true while the user is actively pairing (low latency); false for
      *             background reconnect advertising (low power).
+     * @param timeoutMs stop by itself after this long; 0 keeps advertising until [stop].
+     *                  The Bluetooth controller runs this timer, so a burst still ends on
+     *                  time while the watch's CPU sleeps.
      */
-    fun start(fast: Boolean) {
+    fun start(fast: Boolean, timeoutMs: Int = 0) {
         val adapter = bluetoothManager.adapter
         if (adapter == null || !adapter.isEnabled) {
             Log.w(TAG, "Bluetooth off — can't advertise")
@@ -98,11 +116,12 @@ class PairingAdvertiser(
         }
 
         if (isAdvertising) {
-            if (fast == fastMode) return
+            if (fast == fastMode && timeoutMs == currentTimeoutMs) return
             advertiser.stopAdvertising(advertiseCallback)
             isAdvertising = false
         }
         fastMode = fast
+        currentTimeoutMs = timeoutMs
 
         if (gattServer == null) {
             gattServer = bluetoothManager.openGattServer(context, gattServerCallback)
@@ -115,7 +134,7 @@ class PairingAdvertiser(
             )
             .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM)
             .setConnectable(true)
-            .setTimeout(0)
+            .setTimeout(timeoutMs)
             .build()
 
         // flags (3) + 128-bit solicitation (18) = 21 of 31 bytes
