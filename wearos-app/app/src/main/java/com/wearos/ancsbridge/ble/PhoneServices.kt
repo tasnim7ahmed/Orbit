@@ -7,6 +7,7 @@ import android.util.Log
 import com.wearos.ancsbridge.model.ClockStatus
 import com.wearos.ancsbridge.model.PhoneStatus
 import java.time.LocalDateTime
+import java.util.Locale
 import java.util.TimeZone
 import java.util.UUID
 
@@ -28,8 +29,12 @@ class PhoneServices(
     companion object {
         private const val TAG = "PhoneServices"
 
+        // Locale.ROOT: a locale with its own digits (Bengali, Arabic) would otherwise
+        // format the number with those digits and UUID.fromString would throw
         private fun sig(short: Int): UUID =
-            UUID.fromString(String.format("%08X-0000-1000-8000-00805F9B34FB", short))
+            UUID.fromString(String.format(Locale.ROOT, "%08X-0000-1000-8000-00805F9B34FB", short))
+
+        internal fun sigForTest(short: Int): UUID = sig(short)
 
         val BATTERY_SERVICE: UUID = sig(0x180F)
         val BATTERY_LEVEL: UUID = sig(0x2A19)

@@ -144,7 +144,7 @@ class NowPlayingController(
     }
 
     private fun command(cmd: Int, requestCode: Int): PendingIntent =
-        PendingIntent.getService(
+        PendingIntent.getForegroundService(
             context, requestCode,
             Intent(context, AncsService::class.java)
                 .setAction(AncsService.ACTION_MEDIA_COMMAND)

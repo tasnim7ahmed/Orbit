@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import androidx.core.content.ContextCompat
 
 /**
  * Receives notification action button presses (positive/negative)
@@ -42,6 +43,6 @@ class NotificationActionReceiver : BroadcastReceiver() {
             putExtra(EXTRA_NOTIFICATION_UID, uid)
             putExtra(AncsService.EXTRA_ACTION_ID, actionId)
         }
-        context.startService(serviceIntent)
+        ContextCompat.startForegroundService(context, serviceIntent)
     }
 }

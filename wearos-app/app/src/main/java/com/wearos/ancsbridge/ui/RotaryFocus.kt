@@ -15,6 +15,8 @@ import androidx.compose.ui.focus.focusRequester
 @Composable
 fun Modifier.rotaryFocus(): Modifier {
     val focusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    // Throws if the node isn't attached yet (screen swapped out mid-composition), which
+    // is not worth crashing a screen over: the crown simply won't scroll it.
+    LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
     return this.focusRequester(focusRequester)
 }

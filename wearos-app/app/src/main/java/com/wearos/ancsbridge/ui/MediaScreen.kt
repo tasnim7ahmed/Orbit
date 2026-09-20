@@ -75,7 +75,8 @@ fun MediaScreen(viewModel: MainViewModel, onDismiss: () -> Unit) {
     // Digital Crown / rotating bezel = iPhone volume, like Apple Watch Now Playing
     val focusRequester = remember { FocusRequester() }
     var crownAccumulator by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    // Safe if the node is not attached yet: the crown just will not control volume
+    LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
 
     Column(
         modifier = Modifier

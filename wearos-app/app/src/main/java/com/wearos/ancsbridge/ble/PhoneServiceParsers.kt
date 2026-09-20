@@ -133,8 +133,12 @@ object CtsProtocol {
         if (data.size < 2) return null
         val tz = data[0].toInt() // signed
         val dst = data[1].toInt() and 0xFF
-        if (tz == -128) return null
-        val dstMinutes = if (dst == 255) 0 else dst * 15
+        // The spec allows -48..+56 quarter hours (UTC-12 to UTC+14) and -128 for unknown.
+        // Anything else is malformed: treated as unknown rather than trusted, because an
+        // out-of-range offset makes ZoneOffset throw further down.
+        if (tz !in -48..56) return null
+        // DST offset is 0, 2, 4 or 8 quarter hours, or 255 for unknown
+        val dstMinutes = if (dst in 0..8) dst * 15 else 0
         return tz * 15 + dstMinutes
     }
 
@@ -149,7 +153,8 @@ object CtsProtocol {
         watchEpochMillis: Long,
         watchUtcOffsetMinutes: Int
     ): Double {
-        val offsetMinutes = iphoneUtcOffsetMinutes ?: watchUtcOffsetMinutes
+        // ZoneOffset only accepts ±18 hours; clamp so a strange value can't throw here
+        val offsetMinutes = (iphoneUtcOffsetMinutes ?: watchUtcOffsetMinutes).coerceIn(-18 * 60, 18 * 60)
         val iphoneEpochMillis = iphoneLocal.toInstant(ZoneOffset.ofTotalSeconds(offsetMinutes * 60)).toEpochMilli()
         return (iphoneEpochMillis - watchEpochMillis) / 1000.0
     }

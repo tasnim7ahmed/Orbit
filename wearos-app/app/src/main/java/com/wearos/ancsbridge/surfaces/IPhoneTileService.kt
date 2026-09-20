@@ -1,6 +1,7 @@
 package com.wearos.ancsbridge.surfaces
 
 import android.content.Intent
+import androidx.core.content.ContextCompat
 import androidx.concurrent.futures.CallbackToFutureAdapter
 import androidx.wear.protolayout.ActionBuilders
 import androidx.wear.protolayout.ColorBuilders.argb
@@ -40,7 +41,8 @@ class IPhoneTileService : TileService() {
     override fun onTileRequest(requestParams: RequestBuilders.TileRequest): ListenableFuture<TileBuilders.Tile> {
         // Play/pause chip uses a LoadAction, so the click arrives here
         if (requestParams.currentState.lastClickableId == ID_TOGGLE) {
-            startService(
+            ContextCompat.startForegroundService(
+                this,
                 Intent(this, AncsService::class.java)
                     .setAction(AncsService.ACTION_MEDIA_COMMAND)
                     .putExtra(AncsService.EXTRA_MEDIA_COMMAND, AmsProtocol.CMD_TOGGLE_PLAY_PAUSE)

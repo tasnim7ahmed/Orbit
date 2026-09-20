@@ -294,6 +294,11 @@ class AncsService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Every startForegroundService() must be answered with startForeground(), and
+        // notification actions, the tile and the advertising alarm all start us that way.
+        // Calling it again on an already-foreground service only refreshes the notification.
+        startForeground(SERVICE_NOTIFICATION_ID, buildServiceNotification(serviceStatusText))
+
         when (intent?.action) {
             ACTION_START, null -> {
                 // Try to reconnect to bonded iPhone
@@ -449,10 +454,10 @@ class AncsService : Service() {
      * Advertise so the bonded iPhone can find us again, without burning the radio all day
      * when it simply isn't around.
      *
-     * Right after a drop the watch advertises without a break, which covers the usual case
-     * of walking out of range and coming back. After that it advertises in short bursts,
-     * rarer the longer the iPhone stays away. A screen wake restarts the continuous phase,
-     * so looking at the watch after coming home reconnects quickly.
+     * The first run after a drop is long (3 minutes), which covers the usual case of
+     * walking out of range and coming back. After that it advertises in short bursts,
+     * rarer the longer the iPhone stays away. A screen wake starts a long run again, so
+     * looking at the watch after coming home reconnects quickly.
      */
     private fun startReconnectAdvertising() {
         if (awaySince == 0L) awaySince = SystemClock.elapsedRealtime()
@@ -522,8 +527,9 @@ class AncsService : Service() {
             val now = SystemClock.elapsedRealtime()
             if (now - lastScreenOnRetry < SCREEN_RETRY_COOLDOWN_MS) return
             lastScreenOnRetry = now
-            // You're looking at the watch, so this is when a reconnect matters
-            advertiseBurst(ADVERTISE_FIRST_MS)
+            // You are looking at the watch, so this is when a reconnect matters.
+            // Via startReconnectAdvertising so the away timer is set if it is not yet.
+            startReconnectAdvertising()
         }
     }
 
@@ -537,8 +543,8 @@ class AncsService : Service() {
                 }
                 BluetoothAdapter.STATE_ON -> {
                     Log.i(TAG, "Bluetooth back on — reconnecting to iPhone")
+                    // tryReconnectBonded also starts advertising in parallel
                     tryReconnectBonded()
-                    if (connectionManager.getBondedIPhone() != null) startReconnectAdvertising()
                 }
             }
         }
@@ -1025,8 +1031,10 @@ class AncsService : Service() {
         notificationManager.notify(summaryId, summary)
     }
 
+    // getForegroundService throughout: these fire while the app is in the background,
+    // where a plain service start is refused if the service is not already running
     private fun dismissPendingIntent(notifId: Int): PendingIntent =
-        PendingIntent.getService(
+        PendingIntent.getForegroundService(
             this, notifId + 1_000_000,
             Intent(this, AncsService::class.java)
                 .setAction(ACTION_NOTIFICATION_DISMISSED)
@@ -1035,7 +1043,7 @@ class AncsService : Service() {
         )
 
     private fun groupDismissPendingIntent(bundleId: String, summaryId: Int): PendingIntent =
-        PendingIntent.getService(
+        PendingIntent.getForegroundService(
             this, summaryId,
             Intent(this, AncsService::class.java)
                 .setAction(ACTION_GROUP_DISMISSED)
@@ -1106,8 +1114,12 @@ class AncsService : Service() {
         sessionMarker = started
         sessionId++
         // UIDs from the previous session are meaningless now; watch notifications get
-        // re-linked as iOS re-announces them (see postNotification backlog handling)
+        // re-linked as iOS re-announces them (see postNotification backlog handling).
+        // iOS restarts UIDs at 0, so leftovers here would match fresh notifications and
+        // make them post quietly (backlog) or silently replace another one (update).
         uidToNotifId.clear()
+        backlogUids.clear()
+        modifiedUids.clear()
         missedWindowStart = getSharedPreferences("wearbridge", MODE_PRIVATE).getLong(PREF_LAST_LINK_UP, 0L)
         Log.i(TAG, "ANCS session $sessionId started; link last up at $missedWindowStart")
     }
@@ -1232,7 +1244,6 @@ class AncsService : Service() {
         Log.i(TAG, "Active call notification uid=${notification.uid}")
     }
 
-    @SuppressLint("WakelockTimeout")
     private fun showIncomingCall(notification: AncsNotification) {
         val callerName = notification.title.ifEmpty { "Incoming Call" }
         val appName = notification.appDisplayName ?: "Phone"

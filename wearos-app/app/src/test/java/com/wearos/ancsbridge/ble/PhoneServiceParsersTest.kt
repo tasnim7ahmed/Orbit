@@ -100,6 +100,24 @@ class PhoneServiceParsersTest {
     }
 
     @Test
+    fun `CTS rejects out-of-range offsets instead of trusting them`() {
+        // Beyond UTC+14 and UTC-12: malformed, so "unknown"
+        assertNull(CtsProtocol.parseUtcOffsetMinutes(byteArrayOf(100, 0)))
+        assertNull(CtsProtocol.parseUtcOffsetMinutes(byteArrayOf(-100, 0)))
+        // A nonsense DST field counts as no DST rather than a huge offset
+        assertEquals(360, CtsProtocol.parseUtcOffsetMinutes(byteArrayOf(24, 200.toByte())))
+    }
+
+    @Test
+    fun `CTS drift never throws on a strange offset`() {
+        val iphoneLocal = LocalDateTime.of(2026, 9, 18, 23, 13, 25)
+        val watchEpoch = java.time.Instant.parse("2026-09-19T06:13:48Z").toEpochMilli()
+        // ZoneOffset would throw above 18 hours; the value is clamped instead
+        CtsProtocol.driftSeconds(iphoneLocal, 100_000, watchEpoch, 0)
+        CtsProtocol.driftSeconds(iphoneLocal, -100_000, watchEpoch, 0)
+    }
+
+    @Test
     fun `CTS drift is iPhone minus watch`() {
         val iphoneLocal = LocalDateTime.of(2026, 9, 18, 23, 13, 25)
         // Same instant in PDT (-420 min): 2026-09-19T06:13:25Z

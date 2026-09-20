@@ -90,7 +90,8 @@ object DebugInjector {
 /** adb-only entry point for [DebugInjector]; protected by android.permission.DUMP in the manifest. */
 class DebugInjectReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        context.startService(
+        androidx.core.content.ContextCompat.startForegroundService(
+            context,
             Intent(context, AncsService::class.java)
                 .setAction(AncsService.ACTION_DEBUG_INJECT)
                 .putExtras(intent)

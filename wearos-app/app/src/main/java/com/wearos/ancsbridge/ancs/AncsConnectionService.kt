@@ -13,6 +13,7 @@ import android.telecom.PhoneAccount
 import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
 import android.util.Log
+import androidx.core.content.ContextCompat
 
 /**
  * ConnectionService that integrates ANCS incoming calls with Android's Telecom framework.
@@ -113,7 +114,7 @@ class AncsConnectionService : ConnectionService() {
                     putExtra(NotificationActionReceiver.EXTRA_NOTIFICATION_UID, answerUid)
                     putExtra(AncsService.EXTRA_ACTION_ID, com.wearos.ancsbridge.ble.AncsConstants.ACTION_POSITIVE)
                 }
-                startService(intent)
+                ContextCompat.startForegroundService(this, intent)
                 activeConnection = null
             },
             onReject = { rejectUid ->
@@ -123,7 +124,7 @@ class AncsConnectionService : ConnectionService() {
                     putExtra(NotificationActionReceiver.EXTRA_NOTIFICATION_UID, rejectUid)
                     putExtra(AncsService.EXTRA_ACTION_ID, com.wearos.ancsbridge.ble.AncsConstants.ACTION_NEGATIVE)
                 }
-                startService(intent)
+                ContextCompat.startForegroundService(this, intent)
                 activeConnection = null
             }
         )
