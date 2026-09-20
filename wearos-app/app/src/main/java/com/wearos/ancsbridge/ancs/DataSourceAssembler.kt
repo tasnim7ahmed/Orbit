@@ -27,6 +27,13 @@ class DataSourceAssembler {
 
     companion object {
         private const val TAG = "DataSourceAssembler"
+
+        /**
+         * Ceiling on how much of one response we will hold. A well-formed response is a
+         * few kilobytes at most; a peer that sends a huge length field or never stops
+         * sending must not be able to grow this buffer without limit.
+         */
+        private const val MAX_BUFFER_BYTES = 16 * 1024
     }
 
     private enum class State {
@@ -92,6 +99,11 @@ class DataSourceAssembler {
             return null
         }
 
+        if (buffer.size() + data.size > MAX_BUFFER_BYTES) {
+            Log.w(TAG, "Data Source response over ${MAX_BUFFER_BYTES} bytes — dropping it")
+            reset()
+            return null
+        }
         buffer.write(data)
         return tryParse()
     }

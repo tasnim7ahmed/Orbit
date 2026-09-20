@@ -76,7 +76,8 @@ class AncsConnectionService : ConnectionService() {
             val telecomManager = context.getSystemService(TelecomManager::class.java)
             try {
                 telecomManager.addNewIncomingCall(handle, extras)
-                Log.i(TAG, "Reported incoming call to Telecom: '$callerName' uid=$notificationUid")
+                Log.i(TAG, "Reported incoming call to Telecom: uid=$notificationUid")
+                Log.d(TAG, "Caller: '$callerName'")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to report incoming call to Telecom: ${e.message}")
             }
@@ -100,7 +101,8 @@ class AncsConnectionService : ConnectionService() {
         val callerName = extras.getString(EXTRA_CALLER_NAME, "Incoming Call")
         val appName = extras.getString(EXTRA_APP_NAME, "Phone")
 
-        Log.i(TAG, "onCreateIncomingConnection: caller='$callerName' uid=$uid app='$appName'")
+        Log.i(TAG, "onCreateIncomingConnection: uid=$uid")
+        Log.d(TAG, "Caller: '$callerName' app='$appName'")
 
         val connection = AncsCallConnection(
             notificationUid = uid,

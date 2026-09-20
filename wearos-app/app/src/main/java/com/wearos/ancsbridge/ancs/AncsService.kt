@@ -17,6 +17,7 @@ import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.wearos.ancsbridge.AncsApplication
 import com.wearos.ancsbridge.R
 import com.wearos.ancsbridge.ble.AncsConstants
@@ -207,9 +208,19 @@ class AncsService : Service() {
         nowPlaying.start()
 
         // Register bond state receiver
-        registerReceiver(connectionManager.bondStateReceiver, BondStateReceiver.intentFilter)
-        registerReceiver(adapterStateReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
-        registerReceiver(screenOnReceiver, IntentFilter(Intent.ACTION_SCREEN_ON))
+        // All three are system broadcasts; no other app may send them to us
+        ContextCompat.registerReceiver(
+            this, connectionManager.bondStateReceiver, BondStateReceiver.intentFilter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        ContextCompat.registerReceiver(
+            this, adapterStateReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        ContextCompat.registerReceiver(
+            this, screenOnReceiver, IntentFilter(Intent.ACTION_SCREEN_ON),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
 
         // Register PhoneAccount for Telecom framework integration
         // This lets us show incoming calls via the system call UI
@@ -475,7 +486,10 @@ class AncsService : Service() {
         )
     }
 
-    private fun advertiseBurstIntent(): PendingIntent = PendingIntent.getService(
+    // getForegroundService, not getService: if the process was killed, a plain service
+    // start from an alarm is refused in the background, and this service is a foreground
+    // service in every start path.
+    private fun advertiseBurstIntent(): PendingIntent = PendingIntent.getForegroundService(
         this, 40,
         Intent(this, AncsService::class.java).setAction(ACTION_ADVERTISE_BURST),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -533,7 +547,8 @@ class AncsService : Service() {
     private fun tryReconnectBonded() {
         val device = connectionManager.getBondedIPhone()
         if (device != null) {
-            Log.i(TAG, "Found bonded device: ${device.name ?: device.address}")
+            Log.i(TAG, "Found bonded iPhone")
+            Log.d(TAG, "Bonded device: ${device.name ?: device.address}")
             connectionManager.reconnect(device)
             // Our own connection attempt sits pending with no callback while the iPhone is
             // out of range, so advertise as well and let the iPhone come to us. Stops as
@@ -655,7 +670,8 @@ class AncsService : Service() {
         val notification = dataSourceAssembler.onDataReceived(data)
         if (notification != null) {
             pendingAttributeResponse?.complete(Unit)
-            Log.i(TAG, "Notification complete: ${notification.title} - ${notification.message}")
+            Log.i(TAG, "Notification complete: app=${notification.appIdentifier} uid=${notification.uid}")
+            Log.d(TAG, "Content: ${notification.title} - ${notification.message}")
             scope.launch {
                 postNotification(notification)
             }
@@ -757,7 +773,7 @@ class AncsService : Service() {
             // A call from the backlog is already over or being handled, and an updated
             // (MODIFIED) call was answered or handled — never (re)start ringing for those
             if (isBacklog || (isUpdate && activeCallUid != notification.uid)) return
-            Log.i(TAG, "Showing incoming call screen for ${notification.title}")
+            Log.i(TAG, "Showing incoming call screen")
             showIncomingCall(updatedNotification)
             return
         }
@@ -1213,7 +1229,7 @@ class AncsService : Service() {
             )
         }
         notificationManager.notify(notifId, builder.build())
-        Log.i(TAG, "Active call notification for '${notification.title}' uid=${notification.uid}")
+        Log.i(TAG, "Active call notification uid=${notification.uid}")
     }
 
     @SuppressLint("WakelockTimeout")
@@ -1231,7 +1247,7 @@ class AncsService : Service() {
                     setPackage(packageName)
                     putExtra(IncomingCallActivity.EXTRA_CALLER_NAME, callerName)
                 })
-                Log.i(TAG, "Updated caller name to '$callerName' for uid=${notification.uid}")
+                Log.i(TAG, "Updated caller name for uid=${notification.uid}")
             }
             return
         }
@@ -1264,7 +1280,7 @@ class AncsService : Service() {
         if (android.provider.Settings.canDrawOverlays(this)) {
             try {
                 startActivity(callIntent)
-                Log.i(TAG, "Started IncomingCallActivity directly for '$callerName'")
+                Log.i(TAG, "Started IncomingCallActivity directly")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start IncomingCallActivity: ${e.message}")
             }
@@ -1302,7 +1318,7 @@ class AncsService : Service() {
             )
             .build()
         notificationManager.notify(NOTIFICATION_ID_CALL, callNotification)
-        Log.i(TAG, "Posted CallStyle notification for '$callerName'")
+        Log.i(TAG, "Posted CallStyle notification")
     }
 
 

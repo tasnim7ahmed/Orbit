@@ -41,7 +41,8 @@ object AppIconRepository {
     private const val TIMEOUT_MS = 5_000
 
     private val memory = LruCache<String, Bitmap>(40)
-    private val inFlight = mutableSetOf<String>()
+    // Touched from the service and from complication/tile coroutines
+    private val inFlight: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     /** Built-in iOS apps → brand color for the generated icon. */
     private val appleAppColors = mapOf(

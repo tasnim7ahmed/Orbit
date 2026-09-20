@@ -15,6 +15,7 @@ object AppSettings {
 
     private const val PREFS = "wearbridge_settings"
     private const val KEY_APPS = "known_apps"
+    private const val SEEN_WRITE_INTERVAL_MS = 10 * 60_000L
 
     enum class AlertMode(val label: String) {
         ALERT("Alert"),   // heads-up + haptic
@@ -71,11 +72,18 @@ object AppSettings {
 
     fun entryFor(bundleId: String): AppEntry? = _apps.value.firstOrNull { it.bundleId == bundleId }
 
-    /** Record that [bundleId] sent a notification (adds it to the settings list). */
+    /**
+     * Record that [bundleId] sent a notification (adds it to the settings list).
+     *
+     * Called for every notification, so a known app whose entry was just written is left
+     * alone: the timestamp only orders the settings list, and rewriting the whole list to
+     * disk for each notification in a burst is wasted work.
+     */
     fun recordSeen(bundleId: String, name: String) {
         if (bundleId.isEmpty()) return
         val now = System.currentTimeMillis()
         val existing = entryFor(bundleId)
+        if (existing != null && existing.name == name && now - existing.lastSeen < SEEN_WRITE_INTERVAL_MS) return
         val updated = existing?.copy(name = name, lastSeen = now) ?: AppEntry(bundleId, name, now)
         save(listOf(updated) + _apps.value.filter { it.bundleId != bundleId })
     }

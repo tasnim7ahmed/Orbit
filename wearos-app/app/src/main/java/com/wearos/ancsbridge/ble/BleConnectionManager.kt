@@ -210,10 +210,15 @@ class BleConnectionManager(private val context: Context) {
             subscribeToCharacteristic(dataSourceChar!!)
         },
         onNotificationSourceChanged = { data ->
-            _notificationSourceEvents.tryEmit(data)
+            // A full buffer would mean a notification silently never appears — say so
+            if (!_notificationSourceEvents.tryEmit(data)) {
+                Log.e(TAG, "Notification Source event dropped: collector is not keeping up")
+            }
         },
         onDataSourceChanged = { data ->
-            _dataSourceEvents.tryEmit(data)
+            if (!_dataSourceEvents.tryEmit(data)) {
+                Log.e(TAG, "Data Source fragment dropped: collector is not keeping up")
+            }
         },
         onDescriptorWritten = { descriptor, status ->
             if (status != BluetoothGatt.GATT_SUCCESS) {
@@ -425,7 +430,7 @@ class BleConnectionManager(private val context: Context) {
             val name = String(value, Charsets.UTF_8)
             if (name.isNotBlank()) {
                 cachedDeviceName = name
-                Log.i(TAG, "GAP Device Name: $name")
+                Log.d(TAG, "GAP Device Name: $name")
                 _connectionState.value = ConnectionState.Connected(name)
             }
         }
