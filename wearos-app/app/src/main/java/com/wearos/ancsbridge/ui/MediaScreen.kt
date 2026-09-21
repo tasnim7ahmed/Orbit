@@ -4,6 +4,8 @@ import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -109,6 +111,9 @@ fun MediaScreen(viewModel: MainViewModel, onDismiss: () -> Unit) {
                 }
                 .focusRequester(focusRequester)
                 .focusable()
+                // Players that offer extra commands make this taller than the screen;
+                // the crown is taken by volume, so this scrolls by swipe
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 26.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center

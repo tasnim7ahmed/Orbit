@@ -19,11 +19,15 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        // Installing an update stops the app, and nothing restarts a service on its own,
+        // so the watch would sit disconnected until the app was opened by hand.
+        if (intent.action != Intent.ACTION_BOOT_COMPLETED &&
+            intent.action != Intent.ACTION_MY_PACKAGE_REPLACED
+        ) return
 
         // Nothing to reconnect to: don't run a foreground service for no reason
         if (BleConnectionManager.rememberedIPhoneAddress(context) == null) {
-            Log.i(TAG, "Boot completed, but no iPhone has been paired yet")
+            Log.i(TAG, "Nothing to reconnect to: no iPhone has been paired yet")
             return
         }
         // The service enters the foreground as a connected-device service, which the
@@ -32,11 +36,11 @@ class BootReceiver : BroadcastReceiver() {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT)
             != PackageManager.PERMISSION_GRANTED
         ) {
-            Log.w(TAG, "Boot completed, but the Bluetooth permission isn't granted")
+            Log.w(TAG, "The Bluetooth permission is not granted")
             return
         }
 
-        Log.i(TAG, "Boot completed, starting AncsService")
+        Log.i(TAG, "Starting AncsService after ${intent.action}")
         val serviceIntent = Intent(context, AncsService::class.java).apply {
             action = AncsService.ACTION_RECONNECT
         }

@@ -8,6 +8,21 @@ Orbit lets you use a Wear OS watch with an iPhone. Your iPhone notifications, ca
 
 Based on [WearBridge](https://github.com/k97/WearBridge) by Karthik Rajendran (MIT license).
 
+<p align="center">
+  <img src="docs/screenshots/home.png" width="200" alt="Home screen showing a connected iPhone and its battery" />
+  <img src="docs/screenshots/notification.png" width="200" alt="A WhatsApp notification on the watch with the real app icon" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/now-playing.png" width="200" alt="Now Playing showing a Spotify track with transport and skip controls" />
+  <img src="docs/screenshots/call.png" width="200" alt="Incoming call screen with decline and answer buttons" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/settings.png" width="200" alt="Settings screen with switches for how notifications behave" />
+  <img src="docs/screenshots/app-settings.png" width="200" alt="Per-app notification settings listing each iPhone app" />
+</p>
+
+<p align="center"><i>Real screens from a Pixel Watch 3 paired to an iPhone 17 Pro.</i></p>
+
 ## Features
 
 **Pairing**
@@ -17,7 +32,7 @@ Based on [WearBridge](https://github.com/k97/WearBridge) by Karthik Rajendran (M
 
 **Notifications**
 - Every iPhone notification shows up on the watch within a second.
-- Each app shows its real icon.
+- Each app shows its real icon, and its real name, asked from the iPhone itself.
 - Long messages and emails show in full, not cut off. The hidden filler text that some emails add is removed.
 - Clear a notification on the watch and it clears on the iPhone. Clear it on the iPhone and it leaves the watch.
 - The iPhone's own notification buttons (like "Clear" or "Dial") work on the watch.
@@ -36,7 +51,9 @@ Based on [WearBridge](https://github.com/k97/WearBridge) by Karthik Rajendran (M
 - WhatsApp and FaceTime calls work too.
 
 **Music**
-- See what is playing on the iPhone and control it: play, pause, skip and volume.
+- See what is playing on the iPhone and control it: play, pause, next and previous.
+- Skip forward and back inside a track, for podcasts, plus shuffle, repeat, like and dislike. Each button shows only when the player supports it.
+- Shows the track's place in the queue, like "3 of 21", for players that report it.
 - Turn the crown to change the iPhone volume.
 - The music screen opens by itself when playback starts.
 
@@ -47,6 +64,11 @@ Based on [WearBridge](https://github.com/k97/WearBridge) by Karthik Rajendran (M
 **Watch face**
 - An "iPhone" tile with connection, battery and music controls.
 - "iPhone Battery" and "iPhone Now Playing" complications.
+
+**Looks like the rest of the watch**
+- Built with Material 3 for Wear OS, so it matches the system apps.
+- Takes its colours from your watch face when the watch offers a theme.
+- The clock stays on screen, lists scroll the way Wear OS lists do, and each screen has one main action on the bottom edge.
 
 ## Limitations
 
@@ -60,7 +82,6 @@ These need Apple's help, so they can't be done:
 ## Maybe Later
 
 - Take calls on the watch speaker and mic
-- Use the watch as a remote for the iPhone camera and music
 - "Ping my iPhone" to find it
 - iCloud Calendar on the watch
 - Switch between more than one iPhone or watch
@@ -126,7 +147,7 @@ Your own build is signed with the debug key, so it will not install on top of a 
 ## Setup
 
 1. Open Orbit on the watch and allow the permissions it asks for.
-2. Tap **Pair New Device**, then **Start Pairing**.
+2. Tap **Pair iPhone** at the bottom of the screen, then **Start pairing**.
 3. On the iPhone, open **Settings > Bluetooth** and tap the watch's name.
 4. Tap **Pair**, then **Allow** when the iPhone asks to share notifications.
 
@@ -134,7 +155,7 @@ That's it. Notifications start right away.
 
 If the watch doesn't show up in Settings > Bluetooth, connect to it once with a Bluetooth scanner app like nRF Connect. The watch will then ask to pair.
 
-You can also add the **iPhone** tile and the complications from the watch face editor. App settings are under **Settings** in Orbit.
+You can also add the **iPhone** tile and the complications from the watch face editor. App settings are under **Settings** in Orbit, which is also where you pair another iPhone later.
 
 ## Project Structure
 

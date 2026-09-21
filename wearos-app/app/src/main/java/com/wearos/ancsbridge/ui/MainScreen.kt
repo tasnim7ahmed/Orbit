@@ -3,7 +3,6 @@ package com.wearos.ancsbridge.ui
 import android.annotation.SuppressLint
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -83,6 +82,10 @@ fun MainScreen(viewModel: MainViewModel, openMediaRequests: Int = 0) {
             )
             showSettings -> SettingsScreen(
                 viewModel = viewModel,
+                onPairNewDevice = {
+                    showSettings = false
+                    showPairScreen = true
+                },
                 onDismiss = { showSettings = false }
             )
             else -> HomeScreen(
@@ -113,7 +116,6 @@ fun HomeScreen(
 
     ScreenScaffold(
         scrollState = listState,
-        contentPadding = ScreenPadding,
         // The screen's one destructive or primary action sits on the bottom edge
         edgeButton = {
             if (connected) {
@@ -370,7 +372,6 @@ fun PairNewDeviceScreen(viewModel: MainViewModel, onDismiss: () -> Unit) {
 
     ScreenScaffold(
         scrollState = listState,
-        contentPadding = ScreenPadding,
         edgeButton = {
             EdgeButton(
                 onClick = { if (advertising != null) viewModel.stopPairing() else viewModel.startPairing() },
@@ -455,9 +456,6 @@ fun PairNewDeviceScreen(viewModel: MainViewModel, onDismiss: () -> Unit) {
         }
     }
 }
-
-/** Shared list padding: keeps content clear of the round screen's edges. */
-internal val ScreenPadding = PaddingValues(horizontal = 14.dp, vertical = 32.dp)
 
 @Composable
 private fun batteryColor(percent: Int?) = when {

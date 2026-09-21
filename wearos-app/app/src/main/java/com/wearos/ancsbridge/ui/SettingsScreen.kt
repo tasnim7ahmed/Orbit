@@ -19,6 +19,7 @@ import androidx.wear.compose.material3.EdgeButton
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.ListSubHeader
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.OutlinedButton
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.SwitchButton
 import androidx.wear.compose.material3.Text
@@ -31,7 +32,7 @@ import com.wearos.ancsbridge.viewmodel.MainViewModel
  * Alert, Quiet and Off; press and hold to cycle its vibration.
  */
 @Composable
-fun SettingsScreen(viewModel: MainViewModel, onDismiss: () -> Unit) {
+fun SettingsScreen(viewModel: MainViewModel, onPairNewDevice: () -> Unit, onDismiss: () -> Unit) {
     val toggles by viewModel.toggles.collectAsState()
     val apps by viewModel.knownApps.collectAsState()
     val listState = rememberTransformingLazyColumnState()
@@ -39,7 +40,6 @@ fun SettingsScreen(viewModel: MainViewModel, onDismiss: () -> Unit) {
 
     ScreenScaffold(
         scrollState = listState,
-        contentPadding = ScreenPadding,
         edgeButton = {
             EdgeButton(onClick = onDismiss, colors = ButtonDefaults.filledTonalButtonColors()) {
                 Text("Done")
@@ -55,24 +55,32 @@ fun SettingsScreen(viewModel: MainViewModel, onDismiss: () -> Unit) {
             item { ListHeader { Text("Settings") } }
 
             item {
-                Toggle("Stack by app", "Group each app's notifications", toggles.stackByApp) {
+                Toggle("Stack by app", "One group per app", toggles.stackByApp) {
                     viewModel.setToggles(toggles.copy(stackByApp = it))
                 }
             }
             item {
-                Toggle("Open Now Playing", "When the iPhone starts playing", toggles.autoLaunchNowPlaying) {
+                Toggle("Now Playing", "Opens with playback", toggles.autoLaunchNowPlaying) {
                     viewModel.setToggles(toggles.copy(autoLaunchNowPlaying = it))
                 }
             }
             item {
-                Toggle("Left-behind alert", "Buzz when the iPhone goes out of range", toggles.leftBehindAlert) {
+                Toggle("Left behind", "Buzz if iPhone leaves", toggles.leftBehindAlert) {
                     viewModel.setToggles(toggles.copy(leftBehindAlert = it))
                 }
             }
             item {
-                Toggle("Show missed", "Notifications from while away", toggles.showMissedWhileAway) {
+                Toggle("Show missed", "After reconnect", toggles.showMissedWhileAway) {
                     viewModel.setToggles(toggles.copy(showMissedWhileAway = it))
                 }
+            }
+
+            item {
+                OutlinedButton(
+                    onClick = onPairNewDevice,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Pair new iPhone") }
+                )
             }
 
             item { ListSubHeader { Text("Apps") } }

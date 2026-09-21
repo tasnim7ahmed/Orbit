@@ -59,5 +59,20 @@ private val OrbitColorScheme = ColorScheme(
 @Composable
 fun AncsBridgeTheme(content: @Composable () -> Unit) {
     val dynamic = dynamicColorScheme(LocalContext.current)
-    MaterialTheme(colorScheme = dynamic ?: OrbitColorScheme, content = content)
+    // Take the watch face's colours, but keep the two that carry meaning rather than
+    // style: green says the link is healthy, red says something needs attention. A
+    // lavender tick for "connected" reads as decoration, not as a status.
+    val scheme = dynamic?.copy(
+        tertiary = OrbitColorScheme.tertiary,
+        tertiaryDim = OrbitColorScheme.tertiaryDim,
+        tertiaryContainer = OrbitColorScheme.tertiaryContainer,
+        onTertiary = OrbitColorScheme.onTertiary,
+        onTertiaryContainer = OrbitColorScheme.onTertiaryContainer,
+        error = OrbitColorScheme.error,
+        errorDim = OrbitColorScheme.errorDim,
+        errorContainer = OrbitColorScheme.errorContainer,
+        onError = OrbitColorScheme.onError,
+        onErrorContainer = OrbitColorScheme.onErrorContainer
+    ) ?: OrbitColorScheme
+    MaterialTheme(colorScheme = scheme, content = content)
 }
