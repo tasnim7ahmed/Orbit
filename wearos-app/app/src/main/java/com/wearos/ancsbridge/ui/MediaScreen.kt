@@ -4,6 +4,8 @@ import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,10 +20,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.FastForward
+import androidx.compose.material.icons.rounded.FastRewind
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Repeat
+import androidx.compose.material.icons.rounded.RepeatOne
+import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.ThumbDown
+import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.VolumeDown
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.runtime.Composable
@@ -96,6 +105,9 @@ fun MediaScreen(viewModel: MainViewModel, onDismiss: () -> Unit) {
             }
             .focusRequester(focusRequester)
             .focusable()
+            // The extra command rows can push past a small screen; the crown drives
+            // volume here, so this scrolls by swipe
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 28.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -122,6 +134,10 @@ fun MediaScreen(viewModel: MainViewModel, onDismiss: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center
             )
+        }
+        // Position in the player's queue, e.g. "3 of 21"
+        media.queuePosition?.let {
+            Text(it, fontSize = 10.sp, color = Color(0xFF6B7280), textAlign = TextAlign.Center)
         }
 
         Spacer(Modifier.height(8.dp))
@@ -171,6 +187,100 @@ fun MediaScreen(viewModel: MainViewModel, onDismiss: () -> Unit) {
                 viewModel.sendMediaCommand(AmsProtocol.CMD_VOLUME_UP)
             }
         }
+
+        // Everything below depends on what the current player actually offers, so these
+        // appear for a podcast app and stay hidden for one that can't do them.
+        ExtraCommandRow(media) { viewModel.sendMediaCommand(it) }
+        RatingRow(media) { viewModel.sendMediaCommand(it) }
+    }
+}
+
+/** Skip within the track, shuffle and repeat, for players that support them. */
+@Composable
+private fun ExtraCommandRow(media: MediaState, onCommand: (Int) -> Unit) {
+    val shuffleOn = (media.shuffleMode ?: AmsProtocol.MODE_OFF) != AmsProtocol.MODE_OFF
+    val repeatMode = media.repeatMode ?: AmsProtocol.MODE_OFF
+    val buttons = listOfNotNull(
+        offered(media, AmsProtocol.CMD_SKIP_BACKWARD) {
+            ExtraButton(Icons.Rounded.FastRewind, "Skip back", onClick = { onCommand(AmsProtocol.CMD_SKIP_BACKWARD) })
+        },
+        offered(media, AmsProtocol.CMD_ADVANCE_SHUFFLE_MODE) {
+            ExtraButton(
+                Icons.Rounded.Shuffle,
+                if (shuffleOn) "Shuffle on" else "Shuffle off",
+                active = shuffleOn,
+                onClick = { onCommand(AmsProtocol.CMD_ADVANCE_SHUFFLE_MODE) }
+            )
+        },
+        offered(media, AmsProtocol.CMD_ADVANCE_REPEAT_MODE) {
+            ExtraButton(
+                if (repeatMode == AmsProtocol.MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+                when (repeatMode) {
+                    AmsProtocol.MODE_ONE -> "Repeat track"
+                    AmsProtocol.MODE_ALL -> "Repeat all"
+                    else -> "Repeat off"
+                },
+                active = repeatMode != AmsProtocol.MODE_OFF,
+                onClick = { onCommand(AmsProtocol.CMD_ADVANCE_REPEAT_MODE) }
+            )
+        },
+        offered(media, AmsProtocol.CMD_SKIP_FORWARD) {
+            ExtraButton(Icons.Rounded.FastForward, "Skip forward", onClick = { onCommand(AmsProtocol.CMD_SKIP_FORWARD) })
+        }
+    )
+    if (buttons.isEmpty()) return
+    Spacer(Modifier.height(2.dp))
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        buttons.forEach { it() }
+    }
+}
+
+/** Like and dislike, which Apple Music and podcast apps offer. */
+@Composable
+private fun RatingRow(media: MediaState, onCommand: (Int) -> Unit) {
+    val buttons = listOfNotNull(
+        offered(media, AmsProtocol.CMD_LIKE_TRACK) {
+            ExtraButton(Icons.Rounded.ThumbUp, "Like", onClick = { onCommand(AmsProtocol.CMD_LIKE_TRACK) })
+        },
+        offered(media, AmsProtocol.CMD_DISLIKE_TRACK) {
+            ExtraButton(Icons.Rounded.ThumbDown, "Dislike", onClick = { onCommand(AmsProtocol.CMD_DISLIKE_TRACK) })
+        }
+    )
+    if (buttons.isEmpty()) return
+    Spacer(Modifier.height(2.dp))
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        buttons.forEach { it() }
+    }
+}
+
+/**
+ * These buttons appear only once the iPhone has said the player supports the command,
+ * rather than optimistically like the transport controls: a dead Shuffle button is worse
+ * than none, and the supported list arrives as soon as a player is active.
+ */
+private fun offered(media: MediaState, command: Int, button: @Composable () -> Unit): (@Composable () -> Unit)? =
+    if (media.available && command in media.supportedCommands) button else null
+
+@Composable
+private fun ExtraButton(
+    icon: ImageVector,
+    description: String,
+    active: Boolean = false,
+    onClick: () -> Unit
+) {
+    IconButton(onClick = onClick, modifier = Modifier.size(34.dp)) {
+        Icon(
+            icon,
+            contentDescription = description,
+            modifier = Modifier.size(18.dp),
+            tint = if (active) Color(0xFF60A5FA) else Color(0xFF9CA3AF)
+        )
     }
 }
 

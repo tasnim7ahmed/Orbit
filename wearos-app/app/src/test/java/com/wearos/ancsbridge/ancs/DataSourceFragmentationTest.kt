@@ -46,7 +46,7 @@ class DataSourceFragmentationTest {
 
     @Test
     fun parsesUnfragmentedResponse() {
-        val n = assembler(42).onDataReceived(response(42))
+        val n = assembler(42).feed(response(42))
         assertNotNull(n)
         assertEquals(42L, n!!.uid)
         assertEquals("Alice", n.title)
@@ -60,8 +60,8 @@ class DataSourceFragmentationTest {
         val full = response(7)
         for (split in 1 until full.size) {
             val a = assembler(7)
-            assertNull("split=$split", a.onDataReceived(full.copyOfRange(0, split)))
-            val n = a.onDataReceived(full.copyOfRange(split, full.size))
+            assertNull("split=$split", a.feed(full.copyOfRange(0, split)))
+            val n = a.feed(full.copyOfRange(split, full.size))
             assertNotNull("split=$split", n)
             assertEquals("split=$split", "Alice", n!!.title)
             assertEquals("split=$split", "See you at 7 — bring the charger", n.message)
@@ -81,7 +81,7 @@ class DataSourceFragmentationTest {
         var offset = 0
         while (offset < full.size) {
             val end = minOf(offset + 512, full.size)
-            val n = a.onDataReceived(full.copyOfRange(offset, end))
+            val n = a.feed(full.copyOfRange(offset, end))
             if (end < full.size) assertNull(n) else result = n
             offset = end
         }
@@ -95,7 +95,7 @@ class DataSourceFragmentationTest {
         val full = response(0xFFFFFFFFL)
         val a = assembler(0xFFFFFFFFL)
         var result: com.wearos.ancsbridge.model.AncsNotification? = null
-        for (b in full) result = a.onDataReceived(byteArrayOf(b)) ?: result
+        for (b in full) result = a.feed(byteArrayOf(b)) ?: result
         assertNotNull(result)
         assertEquals(0xFFFFFFFFL, result!!.uid)
         assertEquals("Alice", result.title)

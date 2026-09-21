@@ -18,6 +18,14 @@ object AmsProtocol {
     const val CMD_PREVIOUS_TRACK = 4
     const val CMD_VOLUME_UP = 5
     const val CMD_VOLUME_DOWN = 6
+    const val CMD_ADVANCE_REPEAT_MODE = 7
+    const val CMD_ADVANCE_SHUFFLE_MODE = 8
+    /** Jump within the current track, the 15-second skip podcast players offer. */
+    const val CMD_SKIP_FORWARD = 9
+    const val CMD_SKIP_BACKWARD = 10
+    const val CMD_LIKE_TRACK = 11
+    const val CMD_DISLIKE_TRACK = 12
+    const val CMD_BOOKMARK_TRACK = 13
 
     // Entity IDs
     const val ENTITY_PLAYER = 0
@@ -29,11 +37,22 @@ object AmsProtocol {
     const val PLAYER_PLAYBACK_INFO = 1
     const val PLAYER_VOLUME = 2
 
+    // Queue attributes
+    const val QUEUE_INDEX = 0
+    const val QUEUE_COUNT = 1
+    const val QUEUE_SHUFFLE_MODE = 2
+    const val QUEUE_REPEAT_MODE = 3
+
     // Track attributes
     const val TRACK_ARTIST = 0
     const val TRACK_ALBUM = 1
     const val TRACK_TITLE = 2
     const val TRACK_DURATION = 3
+
+    // Shuffle and repeat mode values, shared by both attributes
+    const val MODE_OFF = 0
+    const val MODE_ONE = 1
+    const val MODE_ALL = 2
 
     const val FLAG_TRUNCATED = 0x01
 
@@ -44,6 +63,10 @@ object AmsProtocol {
     val SUBSCRIBE_TRACK = byteArrayOf(
         ENTITY_TRACK.toByte(), TRACK_ARTIST.toByte(), TRACK_ALBUM.toByte(),
         TRACK_TITLE.toByte(), TRACK_DURATION.toByte()
+    )
+    val SUBSCRIBE_QUEUE = byteArrayOf(
+        ENTITY_QUEUE.toByte(), QUEUE_INDEX.toByte(), QUEUE_COUNT.toByte(),
+        QUEUE_SHUFFLE_MODE.toByte(), QUEUE_REPEAT_MODE.toByte()
     )
 
     data class EntityUpdate(val entity: Int, val attribute: Int, val truncated: Boolean, val value: String)
@@ -84,6 +107,14 @@ object AmsProtocol {
                     }
                 }
                 PLAYER_VOLUME -> state.copy(volume = v.trim().toFloatOrNull())
+                else -> state
+            }
+            ENTITY_QUEUE -> when (update.attribute) {
+                // Every queue attribute arrives as the integer written out as text
+                QUEUE_INDEX -> state.copy(queueIndex = v.trim().toIntOrNull())
+                QUEUE_COUNT -> state.copy(queueCount = v.trim().toIntOrNull())
+                QUEUE_SHUFFLE_MODE -> state.copy(shuffleMode = v.trim().toIntOrNull())
+                QUEUE_REPEAT_MODE -> state.copy(repeatMode = v.trim().toIntOrNull())
                 else -> state
             }
             ENTITY_TRACK -> when (update.attribute) {

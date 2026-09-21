@@ -40,7 +40,7 @@ class DataSourceAssemblerTest {
             )
         )
 
-        val notification = assembler.onDataReceived(response)
+        val notification = assembler.feed(response)
 
         assertNotNull(notification)
         assertEquals(0x42L, notification!!.uid)
@@ -78,10 +78,10 @@ class DataSourceAssemblerTest {
         val frag2 = fullResponse.copyOfRange(8, 20)
         val frag3 = fullResponse.copyOfRange(20, fullResponse.size)
 
-        assertNull(assembler.onDataReceived(frag1))
-        assertNull(assembler.onDataReceived(frag2))
+        assertNull(assembler.feed(frag1))
+        assertNull(assembler.feed(frag2))
 
-        val notification = assembler.onDataReceived(frag3)
+        val notification = assembler.feed(frag3)
         assertNotNull(notification)
         assertEquals("com.google.Gmail", notification!!.appIdentifier)
         assertEquals("Alice", notification.title)
@@ -112,7 +112,7 @@ class DataSourceAssemblerTest {
             )
         )
 
-        val notification = assembler.onDataReceived(response)
+        val notification = assembler.feed(response)
         assertNotNull(notification)
         assertEquals("", notification!!.title)
         assertEquals("", notification.subtitle)
@@ -136,8 +136,8 @@ class DataSourceAssemblerTest {
         val frag1 = fullResponse.copyOfRange(0, splitAt + 1) // includes first length byte
         val frag2 = fullResponse.copyOfRange(splitAt + 1, fullResponse.size)
 
-        assertNull(assembler.onDataReceived(frag1))
-        val notification = assembler.onDataReceived(frag2)
+        assertNull(assembler.feed(frag1))
+        val notification = assembler.feed(frag2)
         assertNotNull(notification)
         assertEquals("Bob", notification!!.title)
     }
@@ -152,7 +152,7 @@ class DataSourceAssemblerTest {
         )
 
         // Send partial data
-        assembler.onDataReceived(byteArrayOf(0x00, 0x01, 0x00, 0x00))
+        assembler.feed(byteArrayOf(0x00, 0x01, 0x00, 0x00))
 
         // Reset
         assembler.reset()
@@ -166,7 +166,7 @@ class DataSourceAssemblerTest {
         )
 
         val response = buildResponse(0, 2, listOf(0 to "test"))
-        val notification = assembler.onDataReceived(response)
+        val notification = assembler.feed(response)
         assertNotNull(notification)
         assertEquals(2L, notification!!.uid)
     }

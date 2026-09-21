@@ -47,10 +47,26 @@ data class MediaState(
     val artist: String = "",
     val album: String = "",
     val durationSec: Double? = null,
-    val supportedCommands: Set<Int> = emptySet()
+    val supportedCommands: Set<Int> = emptySet(),
+    /** Position of the current track in the player's queue, zero-based. */
+    val queueIndex: Int? = null,
+    val queueCount: Int? = null,
+    /** AmsProtocol.MODE_OFF / MODE_ONE / MODE_ALL, null until the iPhone reports it. */
+    val shuffleMode: Int? = null,
+    val repeatMode: Int? = null
 ) {
     val isPlaying get() = playbackState == PLAYBACK_PLAYING
     val hasTrack get() = title.isNotEmpty() || artist.isNotEmpty()
+
+    /** "3 of 21", or null when the player doesn't report a queue. */
+    val queuePosition: String?
+        get() {
+            val count = queueCount?.takeIf { it > 0 } ?: return null
+            val index = queueIndex ?: return null
+            return "${index + 1} of $count"
+        }
+
+    fun supports(command: Int) = supportedCommands.isEmpty() || command in supportedCommands
 
     /** Current position extrapolated from the last report. */
     fun positionAt(nowElapsedRealtime: Long): Double {

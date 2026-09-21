@@ -23,6 +23,15 @@ import java.nio.ByteOrder
  *   [1+]   AppIdentifier (null-terminated UTF-8)
  *   [n+]   Attribute tuples: [AttrID(1)] [Length(2 LE)] [Data(Length bytes)]
  */
+/** What a completed Data Source response turned out to be. */
+sealed interface DataSourceResult {
+    /** A GetNotificationAttributes response, ready to show. */
+    data class Notification(val notification: AncsNotification) : DataSourceResult
+
+    /** A GetAppAttributes response: the app's own display name, as iOS shows it. */
+    data class AppName(val appIdentifier: String, val displayName: String) : DataSourceResult
+}
+
 class DataSourceAssembler {
 
     companion object {
@@ -46,6 +55,7 @@ class DataSourceAssembler {
     private val buffer = ByteArrayOutputStream()
     private var commandId: Int = -1
     private var notificationUid: Long = 0
+    private var appIdentifier: String = ""
     private var headerParsed = false
 
     // Parsed attributes
@@ -87,11 +97,23 @@ class DataSourceAssembler {
     }
 
     /**
+     * Start expecting a GetAppAttributes response for [appId].
+     *
+     * @param requestedAttributes The app attribute IDs in the order we requested them
+     */
+    fun expectAppAttributes(appId: String, requestedAttributes: List<Int>) {
+        reset()
+        appIdentifier = appId
+        expectedAttributes = requestedAttributes
+        state = State.READING_HEADER
+    }
+
+    /**
      * Feed incoming Data Source bytes. Call this for each onCharacteristicChanged.
      *
-     * @return A completed AncsNotification if all attributes have been parsed, null otherwise.
+     * @return The completed response once all attributes have been parsed, null otherwise.
      */
-    fun onDataReceived(data: ByteArray): AncsNotification? {
+    fun onDataReceived(data: ByteArray): DataSourceResult? {
         if (state == State.IDLE) {
             // Nothing requested — e.g. trailing tuples iOS appends after a completed
             // response. Parsing it as a new response would post an empty notification.
@@ -108,7 +130,7 @@ class DataSourceAssembler {
         return tryParse()
     }
 
-    private fun tryParse(): AncsNotification? {
+    private fun tryParse(): DataSourceResult? {
         val bytes = buffer.toByteArray()
         var offset = 0
 
@@ -131,6 +153,7 @@ class DataSourceAssembler {
                     // Read null-terminated app identifier
                     val nullIndex = bytes.indexOf(0.toByte(), fromIndex = 1)
                     if (nullIndex == -1) return null // Haven't received full app ID yet
+                    appIdentifier = String(bytes, 1, nullIndex - 1, Charsets.UTF_8)
                     offset = nullIndex + 1
                     headerParsed = true
                     state = State.READING_ATTRIBUTES
@@ -197,9 +220,9 @@ class DataSourceAssembler {
 
         // Check if all attributes are parsed
         if (allAttributesReceived()) {
-            val notification = buildNotification()
+            val result = buildResult()
             reset()
-            return notification
+            return result
         }
 
         // Still need more data
@@ -220,6 +243,16 @@ class DataSourceAssembler {
         reset()
         return notification
     }
+
+    private fun buildResult(): DataSourceResult =
+        if (commandId == AncsConstants.COMMAND_GET_APP_ATTRIBUTES) {
+            DataSourceResult.AppName(
+                appIdentifier = appIdentifier,
+                displayName = attributes[AncsConstants.APP_ATTR_DISPLAY_NAME].orEmpty()
+            )
+        } else {
+            DataSourceResult.Notification(buildNotification())
+        }
 
     private fun buildNotification(): AncsNotification {
         return AncsNotification(
@@ -268,6 +301,7 @@ class DataSourceAssembler {
         buffer.reset()
         commandId = -1
         notificationUid = 0
+        appIdentifier = ""
         headerParsed = false
         attributes.clear()
         expectedAttributes = emptyList()

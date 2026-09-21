@@ -28,6 +28,45 @@ class PhoneServiceParsersTest {
     }
 
     @Test
+    fun `AMS queue entity gives position, shuffle and repeat`() {
+        val s = applyAll(
+            update(1, 0, "2"),   // index, zero-based
+            update(1, 1, "21"),  // count
+            update(1, 2, "2"),   // shuffle: all
+            update(1, 3, "1")    // repeat: one
+        )
+        assertEquals(2, s.queueIndex)
+        assertEquals(21, s.queueCount)
+        assertEquals(AmsProtocol.MODE_ALL, s.shuffleMode)
+        assertEquals(AmsProtocol.MODE_ONE, s.repeatMode)
+        assertEquals("3 of 21", s.queuePosition)
+    }
+
+    @Test
+    fun `AMS queue position needs both index and count`() {
+        assertNull(MediaState().queuePosition)
+        assertNull(MediaState(queueIndex = 3).queuePosition)
+        assertNull(MediaState(queueCount = 0, queueIndex = 0).queuePosition)
+        assertEquals("1 of 1", MediaState(queueIndex = 0, queueCount = 1).queuePosition)
+    }
+
+    @Test
+    fun `AMS queue survives a player that sends nonsense`() {
+        val s = applyAll(update(1, 0, ""), update(1, 1, "not a number"))
+        assertNull(s.queueIndex)
+        assertNull(s.queueCount)
+        assertNull(s.queuePosition)
+    }
+
+    @Test
+    fun `supported commands gate the buttons, and an empty set means unknown`() {
+        assertTrue(MediaState().supports(AmsProtocol.CMD_SKIP_FORWARD))
+        val known = MediaState(supportedCommands = setOf(AmsProtocol.CMD_PLAY, AmsProtocol.CMD_NEXT_TRACK))
+        assertTrue(known.supports(AmsProtocol.CMD_NEXT_TRACK))
+        assertFalse(known.supports(AmsProtocol.CMD_SKIP_FORWARD))
+    }
+
+    @Test
     fun `AMS rejects too-short updates`() {
         assertNull(AmsProtocol.parseEntityUpdate(byteArrayOf(0, 1)))
     }

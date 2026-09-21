@@ -82,6 +82,8 @@ class PhoneServices(
             // Entity subscriptions must follow the CCCD writes — the queue keeps order
             write(entity, AmsProtocol.SUBSCRIBE_PLAYER)
             write(entity, AmsProtocol.SUBSCRIBE_TRACK)
+            // Queue gives the position in the playlist plus shuffle and repeat state
+            write(entity, AmsProtocol.SUBSCRIBE_QUEUE)
         } ?: Log.w(TAG, "Apple Media Service not available")
     }
 

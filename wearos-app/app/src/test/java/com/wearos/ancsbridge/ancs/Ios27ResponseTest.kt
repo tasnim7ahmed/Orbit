@@ -33,7 +33,7 @@ class Ios27ResponseTest {
 
     @Test
     fun `parses interleaved iOS 27 response including negative label`() {
-        val n = assembler().onDataReceived(capturedPacket)
+        val n = assembler().feed(capturedPacket)
         assertNotNull(n)
         assertEquals(14L, n!!.uid)
         assertEquals("com.apple.facetime", n.appIdentifier)
@@ -49,8 +49,8 @@ class Ios27ResponseTest {
     fun `parses interleaved response split at every boundary`() {
         for (split in 1 until capturedPacket.size) {
             val a = assembler()
-            val first = a.onDataReceived(capturedPacket.copyOfRange(0, split))
-            val n = first ?: a.onDataReceived(capturedPacket.copyOfRange(split, capturedPacket.size))
+            val first = a.feed(capturedPacket.copyOfRange(0, split))
+            val n = first ?: a.feed(capturedPacket.copyOfRange(split, capturedPacket.size))
             assertNotNull("split=$split", n)
             assertEquals("split=$split", "Decline", n!!.negativeActionLabel)
         }
@@ -59,15 +59,15 @@ class Ios27ResponseTest {
     @Test
     fun `trailing tuples after completion are ignored`() {
         val a = assembler()
-        assertNotNull(a.onDataReceived(capturedPacket))
-        assertNull(a.onDataReceived(byteArrayOf(0xFF.toByte(), 0, 0)))
+        assertNotNull(a.feed(capturedPacket))
+        assertNull(a.feed(byteArrayOf(0xFF.toByte(), 0, 0)))
     }
 
     @Test
     fun `partial flush returns what arrived when a requested attribute never comes`() {
         val a = assembler()
         // Cut before the negative label: everything up to and including "Answer"
-        assertNull(a.onDataReceived(capturedPacket.copyOfRange(0, 105)))
+        assertNull(a.feed(capturedPacket.copyOfRange(0, 105)))
         val n = a.flushPartial()
         assertNotNull(n)
         assertEquals("Incoming Call", n!!.message)

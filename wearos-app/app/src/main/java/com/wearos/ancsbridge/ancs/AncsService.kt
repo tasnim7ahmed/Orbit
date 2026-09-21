@@ -108,6 +108,7 @@ class AncsService : Service() {
         private const val MAX_ACTIVE_NOTIFICATIONS = 20 // Android limit is 25; keep headroom
         // Long messages over a low-power connection interval need more than 3 s
         private const val ATTRIBUTE_RESPONSE_TIMEOUT_MS = 6_000L
+        private const val APP_NAME_TIMEOUT_MS = 3_000L
         private const val PAIRING_WINDOW_MS = 180_000L
 
         /** Shared connection state observable by the ViewModel */
@@ -133,6 +134,9 @@ class AncsService : Service() {
 
     private val dataSourceAssembler = DataSourceAssembler()
     private val appNameCache = mutableMapOf<String, String>()
+
+    /** Apps the iPhone would not name; asking again in this session only costs a timeout. */
+    private val appNameMisses = mutableSetOf<String>()
 
     // Track active notification IDs in posting order (oldest first) for auto-cleanup
     private val activeNotificationIds = ArrayDeque<Int>()
@@ -188,6 +192,9 @@ class AncsService : Service() {
     private val attributeRequestQueue = Channel<AttributeRequest>(Channel.BUFFERED)
     private var requestProcessorJob: Job? = null
     private var pendingAttributeResponse: CompletableDeferred<Unit>? = null
+
+    /** The Data Source response the waiting request processor is about to consume. */
+    private var dataSourceResult: DataSourceResult? = null
     private var serviceStatusText = "Starting..."
 
     private data class AttributeRequest(
@@ -673,14 +680,18 @@ class AncsService : Service() {
     }
 
     private fun handleDataSourceEvent(data: ByteArray) {
-        val notification = dataSourceAssembler.onDataReceived(data)
-        if (notification != null) {
-            pendingAttributeResponse?.complete(Unit)
-            Log.i(TAG, "Notification complete: app=${notification.appIdentifier} uid=${notification.uid}")
-            Log.d(TAG, "Content: ${notification.title} - ${notification.message}")
-            scope.launch {
-                postNotification(notification)
-            }
+        val result = dataSourceAssembler.onDataReceived(data) ?: return
+        val waiting = pendingAttributeResponse
+        if (waiting != null) {
+            // The request processor is waiting for exactly this, and posts it
+            dataSourceResult = result
+            waiting.complete(Unit)
+            return
+        }
+        // Arrived after we stopped waiting: still worth showing
+        if (result is DataSourceResult.Notification) {
+            Log.w(TAG, "Late Data Source response for uid=${result.notification.uid}")
+            scope.launch { postNotification(result.notification) }
         }
     }
 
@@ -703,38 +714,79 @@ class AncsService : Service() {
             flags = event.eventFlags
         )
 
-        // Write the Control Point request
-        val cpData = ControlPointWriter.buildGetNotificationAttributes(
-            uid = event.notificationUid,
-            hasPositiveAction = event.hasPositiveAction,
-            hasNegativeAction = event.hasNegativeAction
+        val result = awaitDataSourceResponse(
+            ControlPointWriter.buildGetNotificationAttributes(
+                uid = event.notificationUid,
+                hasPositiveAction = event.hasPositiveAction,
+                hasNegativeAction = event.hasNegativeAction
+            ),
+            ATTRIBUTE_RESPONSE_TIMEOUT_MS
         )
 
-        val response = CompletableDeferred<Unit>()
-        pendingAttributeResponse = response
-
-        val success = connectionManager.writeControlPoint(cpData)
-        if (!success) {
-            Log.e(TAG, "Failed to write Control Point for uid=${event.notificationUid}")
-            dataSourceAssembler.reset()
-            pendingAttributeResponse = null
+        val notification = (result as? DataSourceResult.Notification)?.notification
+            ?: dataSourceAssembler.flushPartial()?.also {
+                Log.w(TAG, "Incomplete Data Source response for uid=${event.notificationUid}, posting partial")
+            }
+        if (notification == null) {
+            Log.w(TAG, "No Data Source response for uid=${event.notificationUid}")
             return
         }
 
-        // The response arrives asynchronously via dataSourceEvents -> handleDataSourceEvent.
-        // Wait for it before sending the next request — starting the next one resets the
-        // assembler and would drop a response still in flight. The timeout covers ANCS
-        // errors (e.g. notification already removed), which produce no Data Source reply.
-        if (withTimeoutOrNull(ATTRIBUTE_RESPONSE_TIMEOUT_MS) { response.await() } == null) {
-            val partial = dataSourceAssembler.flushPartial()
-            if (partial != null) {
-                Log.w(TAG, "Incomplete Data Source response for uid=${event.notificationUid}, posting partial")
-                postNotification(partial)
-            } else {
-                Log.w(TAG, "No Data Source response for uid=${event.notificationUid}")
-            }
+        Log.i(TAG, "Notification complete: app=${notification.appIdentifier} uid=${notification.uid}")
+        Log.d(TAG, "Content: ${notification.title} - ${notification.message}")
+        // Ask the iPhone what this app is really called, once per app, before showing it
+        resolveAppNameFromIPhone(notification.appIdentifier)
+        postNotification(notification)
+    }
+
+    /**
+     * Write a Control Point command and wait for its Data Source response.
+     *
+     * Commands are sent one at a time: starting the next one resets the assembler and
+     * would drop a response still in flight. The timeout covers ANCS errors (such as a
+     * notification the iPhone has already removed), which produce no response at all.
+     */
+    private suspend fun awaitDataSourceResponse(command: ByteArray, timeoutMs: Long): DataSourceResult? {
+        dataSourceResult = null
+        val response = CompletableDeferred<Unit>()
+        pendingAttributeResponse = response
+        if (!connectionManager.writeControlPoint(command)) {
+            Log.e(TAG, "Control Point write failed")
+            dataSourceAssembler.reset()
+            pendingAttributeResponse = null
+            return null
         }
+        withTimeoutOrNull(timeoutMs) { response.await() }
         pendingAttributeResponse = null
+        return dataSourceResult.also { dataSourceResult = null }
+    }
+
+    /**
+     * Fetch an app's real display name from the iPhone, the name iOS itself shows, so
+     * notifications read "Snapchat" rather than the tail of its bundle ID ("picaboo").
+     * Asked once per app; the answer is kept across restarts.
+     */
+    private suspend fun resolveAppNameFromIPhone(appId: String) {
+        if (appId.isEmpty() || appId in appNameCache || appId in appNameMisses) return
+        if (appId in knownAppNames) return // Apple's own apps are already named properly
+        if (appNamePrefs().contains(appId)) return
+
+        dataSourceAssembler.expectAppAttributes(appId, listOf(AncsConstants.APP_ATTR_DISPLAY_NAME))
+        val result = awaitDataSourceResponse(
+            ControlPointWriter.buildGetAppAttributes(appId), APP_NAME_TIMEOUT_MS
+        ) as? DataSourceResult.AppName
+
+        val name = result?.displayName?.takeIf { it.isNotEmpty() && result.appIdentifier == appId }
+        if (name == null) {
+            // iOS answers nothing for apps it no longer knows — don't ask again this session
+            Log.d(TAG, "No app name from the iPhone for $appId")
+            appNameMisses.add(appId)
+            dataSourceAssembler.reset()
+            return
+        }
+        appNameCache[appId] = name
+        appNamePrefs().edit().putString(appId, name).apply()
+        Log.i(TAG, "Resolved the display name for $appId from the iPhone")
     }
 
     private suspend fun postNotification(notification: AncsNotification) {
@@ -1369,19 +1421,20 @@ class AncsService : Service() {
         }
     }
 
+    /** Where names the iPhone told us are kept, so we only ever ask once per app. */
+    private fun appNamePrefs() = getSharedPreferences("app_names", MODE_PRIVATE)
+
     private fun resolveAppName(appIdentifier: String): String? {
         if (appIdentifier.isEmpty()) return null
         appNameCache[appIdentifier]?.let { return it }
-
-        // For now, derive a readable name from the bundle ID
-        // A full implementation would use GetAppAttributes, but that requires
-        // another CP/DS round trip. We use a simple mapping instead.
-        val name = knownAppNames[appIdentifier] ?: run {
-            // Extract last component: "com.apple.MobileSMS" -> "MobileSMS"
-            appIdentifier.substringAfterLast(".")
+        appNamePrefs().getString(appIdentifier, null)?.let {
+            appNameCache[appIdentifier] = it
+            return it
         }
-        appNameCache[appIdentifier] = name
-        return name
+        // Until the iPhone tells us: our list of Apple's own apps, else the last part of
+        // the bundle ID ("com.apple.MobileSMS" -> "MobileSMS"). Not cached, so the real
+        // name replaces it as soon as it arrives.
+        return knownAppNames[appIdentifier] ?: appIdentifier.substringAfterLast(".")
     }
 
     private fun parseAncsDate(date: String?): Long {
