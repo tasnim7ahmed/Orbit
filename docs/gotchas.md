@@ -55,3 +55,21 @@
 27. **Late callbacks from a replaced `BluetoothGatt`**: after `close()` + a new `connectGatt()`, the old object can still deliver a disconnect. Ignore callbacks whose `gatt` isn't the current one, and reset per-connection state when replacing a link (otherwise `ancsSubscribed` stays true and the new link never subscribes).
 
 28. **GATT completions must match the in-flight operation**: a callback arriving after its operation timed out would otherwise "complete" the next one. `GattOperationQueue.onOperationComplete(uuid)` ignores mismatches.
+
+29. **Coroutine `delay` stops while the watch sleeps**: a CPU suspend freezes it, so a "5 minute" phase lasted 8 minutes and counting in testing. Anything that must happen on time while the screen is off needs an `AlarmManager` wake-up, a wake lock, or a timer the hardware owns. Reconnect advertising sets its length on the advertiser so the Bluetooth controller ends each burst regardless of the CPU.
+
+30. **An app update stops the app, and nothing restarts a service**: after `adb install -r` or a store update the watch sits disconnected until the app is opened. `MY_PACKAGE_REPLACED` in the boot receiver fixes it, and the receiver has to be in the *installed* build before it can fire.
+
+31. **A foreground service of type `connectedDevice` needs `BLUETOOTH_CONNECT` granted**: starting it from the boot receiver without the permission throws, and a service started with `startForegroundService()` that never reaches `startForeground()` crashes the app. Check the permission before starting, and answer every `startForegroundService()` with a `startForeground()` call.
+
+32. **`ZoneOffset` only accepts ±18 hours**: the Current Time Service time-zone byte is attacker-or-bug-controlled input, and an out-of-range value threw inside a GATT callback. Validate against the spec's -48..+56 quarter hours and clamp before use.
+
+33. **iOS restarts notification UIDs at 0, so per-session bookkeeping must be cleared**: leftover "this is backlog" and "this is an update" sets from the previous session matched fresh notifications after a reconnect and made them post silently.
+
+34. **`%d` is localised, `%x` is not**: `String.format("%d", n)` yields Bengali digits under `bn-BD`. Fine for display, wrong for anything parsed, so build UUIDs and protocol strings with `Locale.ROOT`.
+
+35. **The app's UID changes when it is reinstalled with a different signing key**: battery and wake-lock attribution in `batterystats` moves with it (`u0a0` → `u0a1`), which silently reads as "this app used nothing".
+
+36. **Dynamic colour will happily repaint your semantics**: `dynamicColorScheme()` made the "connected" tick lavender. Keep the colours that mean something (success, error) out of the dynamic scheme.
+
+37. **Wear OS drops wireless debugging when it sleeps**, and hands out a new port each time. For a test session keep the watch on its charger, or expect to rediscover it with `adb mdns services` constantly.

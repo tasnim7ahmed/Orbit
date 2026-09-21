@@ -10,22 +10,27 @@
 ### Native media controls (AVRCP)
 - Comes with the Classic link above: Wear OS's own media controls for iPhone playback
 
-### iPhone remote (HID)
-- `BluetoothHidDevice` (public API): watch as a Bluetooth keyboard/consumer-control device
-- Volume-up = iPhone Camera shutter, media keys, slide clicker; possibly a Siri key (experimental)
+### iPhone remote (HID) — declined
+- `BluetoothHidDevice` would let the watch act as a Bluetooth keyboard: volume-up triggers the iPhone Camera shutter, media keys work, and the consumer-page Power/Menu usage is how BLE remotes invoke Siri
+- Owner does not want it; left here only so the option is not researched twice. Unverified whether Wear OS enables the HID Device profile at all
 
-### Heart-rate broadcast
-- Expose the standard Heart Rate Service (0x180D) from the watch so iPhone workout apps (Strava, Zwift, Peloton) can use it like a chest strap
+### Heart-rate broadcast — dropped
+- A Heart Rate Service (0x180D) server on the watch would let iPhone workout apps use it as a chest strap. The sensor is reachable (`BODY_SENSORS` splits into `health.READ_HEART_RATE` below target SDK 36) and it was built once, then deleted: it only helps someone who trains with Strava, Zwift or Peloton, and the Fitbit iOS app already shows the watch's own health data from the cloud
 
 ### "Ping my iPhone"
 - No proper API without an iPhone app; possible hack: start iPhone playback at high volume via AMS
 
 ### iCloud Calendar on the wrist
-- Sync iCloud Calendar over Wi-Fi/LTE via CalDAV (app-specific password) → next-event complication and agenda tile
+- iCloud speaks CalDAV at `caldav.icloud.com` and accepts app-specific passwords from third-party clients, so the watch could fetch the calendar itself over Wi-Fi → next-event complication and agenda tile
+- Costs: Wi-Fi is the watch's biggest battery drain, the password has to live on the watch, and Reminders reportedly do not come through CalDAV the way calendars do
 
 ### Multi-device pairing
 - Switch between iPhones or watches; persist per-device preferences
 - Only one watch receives ANCS events at a time (the last one to subscribe)
+
+## Watch this: the EU may open the door
+- Under the Digital Markets Act, iOS 26.3 gave third-party smartwatches official notification forwarding, AirPods-style proximity pairing and automatic weather sync
+- EU only, so it does not reach this watch, and Apple has not said it will spread. If it ever does, that path beats ANCS
 
 ## Would need an iPhone app (not planned)
 - Typed replies (via Shortcuts — unreliable)

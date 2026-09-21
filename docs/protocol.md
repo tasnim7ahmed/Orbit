@@ -43,10 +43,11 @@ Data Source responses are matched **by attribute ID, not position**: iOS 27 inte
 
 ## Reconnection
 
-- `autoConnect=true` to the bonded iPhone; exponential backoff 3 s → 6 s → 12 s → 30 s cap
-- After an unexpected drop the watch also advertises (low power) so the iPhone can reconnect inbound
+- `autoConnect=true` to the bonded iPhone; exponential backoff 3 s → 6 s → 12 s → 30 s cap. The attempt stays pending in the controller, so it is armed once per drop rather than retried on a timer
+- The watch also advertises so the iPhone can reconnect inbound, which is how reconnects actually happen: the iPhone connects within ~200 ms of a burst starting. Bursts are 180 s at first, then 30 s every 2 minutes, dropping to 30 s every 15 minutes after half an hour away. The length is set on the advertiser so the **Bluetooth controller** ends each burst even while the CPU sleeps, and an inexact `ELAPSED_REALTIME_WAKEUP` alarm starts the next one. A screen wake starts a long burst again (2 minute cooldown). Advertising also starts alongside the pending attempt at service start, or the two sides could never find each other after a restart away from the iPhone
+- Once a session settles (10 s), the watch asks for `CONNECTION_PRIORITY_LOW_POWER`; the iPhone accepts, and attribute fetches still take ~90 ms
 - **Watch Bluetooth off/on**: Android sends no GATT callback, so `ACTION_STATE_CHANGED` drives it — off → `onAdapterOff()` (Disconnected); on → reconnect + advertise
-- `START_STICKY` foreground service + `BootReceiver`
+- `START_STICKY` foreground service. `BootReceiver` handles `BOOT_COMPLETED` **and `MY_PACKAGE_REPLACED`** (an update stops the app and nothing else would restart it), and starts nothing when no iPhone is paired or `BLUETOOTH_CONNECT` is not granted
 - `getBondedIPhone()`: saved address first, then a bonded device whose name contains "iPhone"
 - Replacing a connection resets all per-connection state (`clearCharacteristics()`); late callbacks from a replaced `BluetoothGatt` are ignored
 
@@ -56,13 +57,14 @@ Data Source responses are matched **by attribute ID, not position**: iOS 27 inte
 
 ## Notification Pipeline
 
-1. NS event → ADDED/MODIFIED → fetch attributes via CP (one request at a time; the next waits for the DS response or a 3 s timeout, which posts partial content if title/message arrived)
+1. NS event → ADDED/MODIFIED → fetch attributes via CP (one request at a time; the next waits for the DS response or a 6 s timeout, which posts partial content if title/message arrived). Title, subtitle and action labels are capped at 255 bytes, the message at **2048** so long messages and email previews arrive whole. `MessageText.clean()` then collapses the runs of invisible characters (U+034F, U+200C, U+FEFF) marketing emails pad their previews with
 2. **Backlog** = flagged pre-existing, or anything in the first 10 s after subscribing. Fetched only to (a) re-link notifications still on the watch, (b) send queued clears, (c) recover missed ones ("Show missed"); otherwise skipped
 3. **Watch notification IDs** come from `allocateNotifId()` (persisted counter, 1000–400000), never from the UID. `uidToNotifId` maps the current session's UIDs; it is cleared at each session start
 4. **Re-linking**: iOS restarts UIDs at 0 on reconnect and re-announces everything in Notification Center. Backlog items are matched to posted watch notifications by signature (app + title + message + date) and re-linked to the new UID
-5. **Missed while away**: backlog dated after the last time the link was up (`last_link_up_at` heartbeat every 30 s) is shown on the quiet channel; older items are skipped
+5. **Missed while away**: backlog dated after the last time the link was up (`last_link_up_at`, written every 5 minutes and again on every drop) is shown on the quiet channel; older items are skipped
 6. MODIFIED updates replace their watch notification with `setOnlyAlertOnce` (no second buzz)
 7. Oldest notifications are evicted above 20 active
+8. **App display names**: before a notification from an unfamiliar app is shown, the watch asks the iPhone for that app's real name with `GetAppAttributes` (Snapchat reports `com.toyopagroup.picaboo`). Asked once per app, kept in the `app_names` prefs; apps in the built-in Apple map are never asked. `DataSourceAssembler` returns a `DataSourceResult` because the Data Source carries both kinds of reply, and every Control Point command goes through one write-and-wait path so they stay strictly serial
 
 ### Two-way dismiss
 
@@ -111,8 +113,10 @@ Versioned (`_v7`); bump in `AncsApplication.kt` to change settings.
 
 ## Apple Media Service (Now Playing)
 
-- Remote Command `9B3C81D8-57B1-4A8A-B8DF-0E56F7CA51C2` (write command ID; notifies supported commands), Entity Update `2F7CABCE-808D-411F-9A0C-BB92BA96C102` (subscribe Player name/playback/volume and Track artist/album/title/duration)
-- `MediaScreen`: controls, progress, crown = iPhone volume (`onRotaryScrollEvent`, 48 px per step)
+- Remote Command `9B3C81D8-57B1-4A8A-B8DF-0E56F7CA51C2` (write command ID; notifies which commands the current player supports), Entity Update `2F7CABCE-808D-411F-9A0C-BB92BA96C102` (three subscriptions: Player name/playback/volume, Track artist/album/title/duration, Queue index/count/shuffle/repeat)
+- All 14 remote commands are wired: play 0, pause 1, toggle 2, next 3, previous 4, volume up 5, volume down 6, advance repeat 7, advance shuffle 8, skip forward 9, skip backward 10, like 11, dislike 12, bookmark 13. Transport buttons are shown optimistically; the rest appear only when the supported-command list names them, so Spotify shows skip forward and back (9, 10) and hides shuffle, repeat and ratings
+- Queue attributes arrive as text, and shuffle/repeat use 0 off, 1 one, 2 all. Spotify reports the modes but not index or count, so the "3 of 21" line only shows for players that send them
+- `MediaScreen`: track, progress, transport, the supported extras, volume row, crown = iPhone volume (`onRotaryScrollEvent`, 48 px per step). Scrolls by swipe, since the crown is taken
 - `NowPlayingController`: ongoing notification + Wear Ongoing Activity while a track is loaded (hidden after 10 min paused); auto-opens Now Playing when playback starts (not in the first 8 s of a session, 60 s cooldown, toggle in Settings)
 
 ## Battery & Clock
@@ -129,6 +133,12 @@ Versioned (`_v7`); bump in `AncsApplication.kt` to change settings.
 ## Left-behind Alert
 
 Unexpected disconnect → after 15 s still down → "iPhone disconnected" on `connection` channel. A partial wakelock covers the 15 s (coroutine delays pause while the CPU sleeps). Cleared on reconnect; user "Disconnect" doesn't trigger it.
+
+## Interface
+
+Wear Compose **Material 3** (`compose-material3` 1.6.2). Every screen is an `AppScaffold` + `ScreenScaffold`, so the clock and the scroll indicator come from the platform, lists are `TransformingLazyColumn` (the scaling and fading Wear OS lists have), and each screen puts its one main action in an `EdgeButton` on the bottom curve.
+
+`AncsBridgeTheme` uses `dynamicColorScheme(context)` so colours follow the watch face, but copies the tertiary and error families back to Orbit's own values: green and red carry meaning (healthy link, warning) and should not become decoration. Sizes and colours are Material tokens, never literals. The tile and the notification accent reuse the same palette.
 
 ## Not Supported
 
