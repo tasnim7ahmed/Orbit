@@ -25,15 +25,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.FilledIconButton
+import androidx.wear.compose.material3.IconButtonDefaults
+import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.Text
 import com.wearos.ancsbridge.R
@@ -174,6 +174,7 @@ class IncomingCallActivity : ComponentActivity() {
     }
 }
 
+
 @Composable
 fun IncomingCallScreen(
     callerName: String,
@@ -184,77 +185,74 @@ fun IncomingCallScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(8.dp),
+            .padding(horizontal = 16.dp, vertical = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = appName,
-            fontSize = 12.sp,
-            color = Color.Gray,
-            textAlign = TextAlign.Center
-        )
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Text(
-            text = callerName,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold,
+            appName,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
             textAlign = TextAlign.Center,
-            maxLines = 2
+            maxLines = 1
         )
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(2.dp))
 
         Text(
-            text = "Incoming Call",
-            fontSize = 12.sp,
-            color = Color.Gray,
+            callerName,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        Spacer(modifier = Modifier.height(2.dp))
+
+        Text(
+            "Incoming call",
+            style = MaterialTheme.typography.bodyExtraSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        // Decline / Answer row
         Row(
             horizontalArrangement = Arrangement.Center,
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Decline button (red) — Lucide phone-off
-            Button(
+            FilledIconButton(
                 onClick = onDecline,
-                modifier = Modifier.size(48.dp),
-                shape = CircleShape,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFEF4444)
+                modifier = Modifier.size(52.dp),
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer
                 )
             ) {
                 Icon(
                     painter = painterResource(id = R.drawable.ic_call_decline),
                     contentDescription = "Decline",
-                    modifier = Modifier.size(22.dp),
-                    tint = Color.White
+                    modifier = Modifier.size(24.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.width(28.dp))
+            Spacer(modifier = Modifier.width(24.dp))
 
-            // Answer button (green) — Lucide phone
-            Button(
+            FilledIconButton(
                 onClick = onAnswer,
-                modifier = Modifier.size(48.dp),
-                shape = CircleShape,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF22C55E)
+                modifier = Modifier.size(52.dp),
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer
                 )
             ) {
                 Icon(
                     painter = painterResource(id = R.drawable.ic_call_answer),
                     contentDescription = "Answer",
-                    modifier = Modifier.size(22.dp),
-                    tint = Color.White
+                    modifier = Modifier.size(24.dp)
                 )
             }
         }
@@ -269,7 +267,7 @@ fun CallActiveOnPhoneScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(8.dp),
+            .padding(horizontal = 16.dp, vertical = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -277,38 +275,36 @@ fun CallActiveOnPhoneScreen(
             painter = painterResource(id = R.drawable.ic_call_answer),
             contentDescription = null,
             modifier = Modifier.size(28.dp),
-            tint = Color(0xFF22C55E)
+            tint = MaterialTheme.colorScheme.tertiary
         )
 
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = callerName,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold,
+            callerName,
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
-            maxLines = 2
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
         )
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(2.dp))
 
         Text(
-            text = "Active on iPhone",
-            fontSize = 12.sp,
-            color = Color(0xFF22C55E),
+            "Active on iPhone",
+            style = MaterialTheme.typography.bodyExtraSmall,
+            color = MaterialTheme.colorScheme.tertiary,
             textAlign = TextAlign.Center
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
         Button(
             onClick = onDismiss,
-            modifier = Modifier.fillMaxWidth(0.6f),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF374151)
-            )
-        ) {
-            Text("Dismiss", fontSize = 13.sp)
-        }
+            modifier = Modifier.fillMaxWidth(0.7f),
+            colors = ButtonDefaults.filledTonalButtonColors(),
+            label = { Text("Dismiss") }
+        )
     }
 }

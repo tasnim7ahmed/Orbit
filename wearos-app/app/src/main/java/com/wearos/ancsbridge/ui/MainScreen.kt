@@ -1,19 +1,25 @@
 package com.wearos.ancsbridge.ui
 
 import android.annotation.SuppressLint
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.BluetoothDisabled
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ClearAll
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.PhoneIphone
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -23,26 +29,26 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
+import androidx.wear.compose.material3.AppScaffold
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.Card
+import androidx.wear.compose.material3.CardDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
-import androidx.wear.compose.material3.ListHeader
-import androidx.wear.compose.material3.Text
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.PhoneIphone
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.MusicNote
-import androidx.compose.material.icons.rounded.Schedule
-import androidx.compose.material.icons.rounded.Settings
+import androidx.wear.compose.material3.EdgeButton
+import androidx.wear.compose.material3.FilledTonalButton
 import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.ListHeader
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.Text
 import com.wearos.ancsbridge.ancs.AncsService
 import com.wearos.ancsbridge.model.ClockStatus
 import com.wearos.ancsbridge.model.ConnectionState
@@ -64,25 +70,28 @@ fun MainScreen(viewModel: MainViewModel, openMediaRequests: Int = 0) {
         }
     }
 
-    when {
-        showPairScreen -> PairNewDeviceScreen(
-            viewModel = viewModel,
-            onDismiss = { showPairScreen = false }
-        )
-        showMediaScreen -> MediaScreen(
-            viewModel = viewModel,
-            onDismiss = { showMediaScreen = false }
-        )
-        showSettings -> SettingsScreen(
-            viewModel = viewModel,
-            onDismiss = { showSettings = false }
-        )
-        else -> HomeScreen(
-            viewModel = viewModel,
-            onPairNewDevice = { showPairScreen = true },
-            onOpenMedia = { showMediaScreen = true },
-            onOpenSettings = { showSettings = true }
-        )
+    // AppScaffold puts the clock at the top of every screen, the way Wear OS expects
+    AppScaffold {
+        when {
+            showPairScreen -> PairNewDeviceScreen(
+                viewModel = viewModel,
+                onDismiss = { showPairScreen = false }
+            )
+            showMediaScreen -> MediaScreen(
+                viewModel = viewModel,
+                onDismiss = { showMediaScreen = false }
+            )
+            showSettings -> SettingsScreen(
+                viewModel = viewModel,
+                onDismiss = { showSettings = false }
+            )
+            else -> HomeScreen(
+                viewModel = viewModel,
+                onPairNewDevice = { showPairScreen = true },
+                onOpenMedia = { showMediaScreen = true },
+                onOpenSettings = { showSettings = true }
+            )
+        }
     }
 }
 
@@ -99,272 +108,236 @@ fun HomeScreen(
     val clock by viewModel.clock.collectAsState()
     val media by viewModel.media.collectAsState()
     val hasBondedIPhone by viewModel.hasBondedIPhone.collectAsState()
+    val listState = rememberTransformingLazyColumnState()
+    val connected = connectionState is ConnectionState.Connected
 
-    ScalingLazyColumn(
-        modifier = Modifier.fillMaxSize().rotaryFocus(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        item {
-            ListHeader {
-                Text("Orbit")
+    ScreenScaffold(
+        scrollState = listState,
+        contentPadding = ScreenPadding,
+        // The screen's one destructive or primary action sits on the bottom edge
+        edgeButton = {
+            if (connected) {
+                EdgeButton(
+                    onClick = { viewModel.disconnect() },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                ) {
+                    Text("Disconnect")
+                }
+            } else {
+                EdgeButton(onClick = onPairNewDevice) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Pair iPhone")
+                    }
+                }
             }
         }
+    ) { contentPadding ->
+        TransformingLazyColumn(
+            state = listState,
+            contentPadding = contentPadding,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            item { ListHeader { Text("Orbit") } }
 
-        when (connectionState) {
-            is ConnectionState.Connected -> {
-                val deviceName = (connectionState as ConnectionState.Connected).deviceName ?: "iPhone"
+            when (connectionState) {
+                is ConnectionState.Connected -> {
+                    val deviceName = (connectionState as ConnectionState.Connected).deviceName ?: "iPhone"
 
-                // Status
-                item {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                    ) {
-                        Icon(
-                            Icons.Rounded.CheckCircle,
-                            contentDescription = null,
-                            tint = Color(0xFF34D399),
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text("Connected", fontSize = 14.sp)
-                            Text(
-                                "Notifications active",
-                                fontSize = 11.sp,
-                                color = Color(0xFF34D399)
-                            )
-                        }
-                    }
-                }
-
-                // iPhone info
-                item {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth(0.9f)
-                            .padding(vertical = 4.dp)
-                    ) {
-                        Icon(
-                            Icons.Rounded.PhoneIphone,
-                            contentDescription = null,
-                            tint = Color(0xFF60A5FA),
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(deviceName, fontSize = 14.sp)
-                            Text(
-                                battery?.let { "Battery $it%" } ?: "via ANCS over BLE",
-                                fontSize = 11.sp,
-                                color = batteryColor(battery)
-                            )
-                        }
-                    }
-                }
-
-                // Clock check against iPhone (Current Time Service)
-                clock?.let { status ->
                     item {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth(0.9f)
-                                .padding(vertical = 4.dp)
-                        ) {
-                            Icon(
-                                Icons.Rounded.Schedule,
-                                contentDescription = null,
-                                tint = if (status.inSync) Color(0xFF34D399) else Color(0xFFFBBF24),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                clockText(status),
-                                fontSize = 11.sp,
-                                color = Color(0xFF9CA3AF)
-                            )
-                        }
-                    }
-                }
-
-                item { Spacer(modifier = Modifier.height(8.dp)) }
-
-                // Now Playing (Apple Media Service)
-                item {
-                    Button(
-                        onClick = onOpenMedia,
-                        modifier = Modifier.fillMaxWidth(0.9f),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A5F))
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Rounded.MusicNote,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                if (media.hasTrack) media.title else "Media Controls",
-                                fontSize = 12.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                }
-
-                item { Spacer(modifier = Modifier.height(4.dp)) }
-
-                // Clear notifications
-                item {
-                    Button(
-                        onClick = { viewModel.clearAllNotifications() },
-                        modifier = Modifier.fillMaxWidth(0.9f)
-                    ) {
-                        Text("Clear Notifications", fontSize = 12.sp)
-                    }
-                }
-
-                item { Spacer(modifier = Modifier.height(4.dp)) }
-
-                item { SettingsButton(onOpenSettings) }
-
-                item { Spacer(modifier = Modifier.height(4.dp)) }
-
-                // Disconnect
-                item {
-                    Button(
-                        onClick = { viewModel.disconnect() },
-                        modifier = Modifier.fillMaxWidth(0.9f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFEF4444)
+                        StatusCard(
+                            icon = Icons.Rounded.CheckCircle,
+                            iconTint = MaterialTheme.colorScheme.tertiary,
+                            title = "Connected",
+                            subtitle = "Notifications active"
                         )
-                    ) {
-                        Text("Disconnect", fontSize = 12.sp, color = Color.White)
                     }
-                }
-            }
 
-            is ConnectionState.Connecting, is ConnectionState.Bonding -> {
-                item {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.padding(16.dp)
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            when (connectionState) {
-                                is ConnectionState.Connecting ->
-                                    "Connecting to ${(connectionState as ConnectionState.Connecting).deviceName ?: "iPhone"}…"
-                                is ConnectionState.Bonding ->
-                                    "Pairing with ${(connectionState as ConnectionState.Bonding).deviceName ?: "iPhone"}…"
-                                else -> "Connecting…"
+                    item {
+                        StatusCard(
+                            icon = Icons.Rounded.PhoneIphone,
+                            iconTint = MaterialTheme.colorScheme.primary,
+                            title = deviceName,
+                            subtitle = battery?.let { "Battery $it%" } ?: "Linked over Bluetooth",
+                            subtitleColor = batteryColor(battery)
+                        )
+                    }
+
+                    clock?.let { status ->
+                        item {
+                            InfoRow(
+                                icon = Icons.Rounded.Schedule,
+                                iconTint = if (status.inSync) MaterialTheme.colorScheme.tertiary
+                                else MaterialTheme.colorScheme.secondary,
+                                text = clockText(status)
+                            )
+                        }
+                    }
+
+                    item {
+                        FilledTonalButton(
+                            onClick = onOpenMedia,
+                            modifier = Modifier.fillMaxWidth(),
+                            icon = {
+                                Icon(
+                                    Icons.Rounded.MusicNote,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             },
-                            textAlign = TextAlign.Center,
-                            fontSize = 13.sp
+                            label = {
+                                Text(
+                                    if (media.hasTrack) media.title else "Now Playing",
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
+                            secondaryLabel = if (media.hasTrack && media.artist.isNotEmpty()) {
+                                { Text(media.artist, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                            } else null
                         )
-                    }
-                }
-            }
-
-            else -> {
-                // Idle / Disconnected / Error — show reconnect or pair
-
-                if (hasBondedIPhone) {
-                    // Has a bonded device — show reconnecting state
-                    item {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(16.dp)
-                        ) {
-                            Icon(
-                                Icons.Rounded.PhoneIphone,
-                                contentDescription = null,
-                                tint = Color(0xFF9CA3AF),
-                                modifier = Modifier.size(28.dp)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                if (connectionState is ConnectionState.Error)
-                                    (connectionState as ConnectionState.Error).message
-                                else "iPhone not in range",
-                                textAlign = TextAlign.Center,
-                                fontSize = 13.sp,
-                                color = Color(0xFF9CA3AF)
-                            )
-                        }
                     }
 
                     item {
                         Button(
-                            onClick = { viewModel.startService() },
-                            modifier = Modifier.fillMaxWidth(0.9f)
-                        ) {
-                            Text("Reconnect", fontSize = 12.sp)
-                        }
+                            onClick = { viewModel.clearAllNotifications() },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.filledVariantButtonColors(),
+                            icon = {
+                                Icon(
+                                    Icons.Rounded.ClearAll,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            },
+                            label = { Text("Clear all") }
+                        )
                     }
 
-                    item { Spacer(modifier = Modifier.height(4.dp)) }
-                } else {
-                    // No bonded device — prompt to pair
+                    item { SettingsButton(onOpenSettings) }
+                }
+
+                is ConnectionState.Connecting, is ConnectionState.Bonding -> {
                     item {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(16.dp)
-                        ) {
-                            Icon(
-                                Icons.Rounded.PhoneIphone,
-                                contentDescription = null,
-                                tint = Color(0xFF9CA3AF),
-                                modifier = Modifier.size(32.dp)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                "No iPhone paired",
-                                fontSize = 14.sp,
-                                textAlign = TextAlign.Center
-                            )
-                            Text(
-                                "Pair your iPhone to start receiving notifications",
-                                fontSize = 11.sp,
-                                color = Color(0xFF9CA3AF),
-                                textAlign = TextAlign.Center
+                        BusyCard(
+                            when (connectionState) {
+                                is ConnectionState.Connecting ->
+                                    "Connecting to ${(connectionState as ConnectionState.Connecting).deviceName ?: "iPhone"}"
+                                is ConnectionState.Bonding ->
+                                    "Pairing with ${(connectionState as ConnectionState.Bonding).deviceName ?: "iPhone"}"
+                                else -> "Connecting"
+                            }
+                        )
+                    }
+                    item { SettingsButton(onOpenSettings) }
+                }
+
+                else -> {
+                    item {
+                        StatusCard(
+                            icon = Icons.Rounded.BluetoothDisabled,
+                            iconTint = MaterialTheme.colorScheme.secondary,
+                            title = if (hasBondedIPhone) "Not in range" else "No iPhone yet",
+                            subtitle = when {
+                                connectionState is ConnectionState.Error ->
+                                    (connectionState as ConnectionState.Error).message
+                                hasBondedIPhone -> "Reconnects on its own"
+                                else -> "Pair to start mirroring"
+                            }
+                        )
+                    }
+                    if (hasBondedIPhone) {
+                        item {
+                            Button(
+                                onClick = { viewModel.startService() },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.filledVariantButtonColors(),
+                                label = { Text("Reconnect now") }
                             )
                         }
                     }
+                    item { SettingsButton(onOpenSettings) }
                 }
-
-                // Always show Pair New Device button
-                item {
-                    Button(
-                        onClick = onPairNewDevice,
-                        modifier = Modifier.fillMaxWidth(0.9f),
-                        colors = if (hasBondedIPhone)
-                            ButtonDefaults.buttonColors(containerColor = Color(0xFF374151))
-                        else ButtonDefaults.buttonColors()
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Rounded.Add,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Pair New Device", fontSize = 12.sp)
-                        }
-                    }
-                }
-
-                item { Spacer(modifier = Modifier.height(4.dp)) }
-
-                item { SettingsButton(onOpenSettings) }
             }
+        }
+    }
+}
+
+/** States one thing plainly: an icon, a title, and a line under it. */
+@Composable
+private fun StatusCard(
+    icon: ImageVector,
+    iconTint: Color,
+    title: String,
+    subtitle: String,
+    subtitleColor: Color = MaterialTheme.colorScheme.onSurfaceVariant
+) {
+    Card(
+        onClick = { },
+        enabled = false,
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodyExtraSmall,
+                    color = subtitleColor,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+/** A quieter line for secondary facts, such as the clock check. */
+@Composable
+private fun InfoRow(icon: ImageVector, iconTint: Color, text: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 2.dp)
+    ) {
+        Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text,
+            style = MaterialTheme.typography.bodyExtraSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2
+        )
+    }
+}
+
+@Composable
+private fun BusyCard(text: String) {
+    Card(
+        onClick = { },
+        enabled = false,
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(10.dp))
+            Text(text, style = MaterialTheme.typography.bodySmall, maxLines = 3)
         }
     }
 }
@@ -373,15 +346,11 @@ fun HomeScreen(
 private fun SettingsButton(onOpenSettings: () -> Unit) {
     Button(
         onClick = onOpenSettings,
-        modifier = Modifier.fillMaxWidth(0.9f),
-        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF374151))
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(modifier = Modifier.width(6.dp))
-            Text("Settings", fontSize = 12.sp)
-        }
-    }
+        modifier = Modifier.fillMaxWidth(),
+        colors = ButtonDefaults.filledTonalButtonColors(),
+        icon = { Icon(Icons.Rounded.Settings, contentDescription = null, modifier = Modifier.size(20.dp)) },
+        label = { Text("Settings") }
+    )
 }
 
 @SuppressLint("MissingPermission")
@@ -389,6 +358,7 @@ private fun SettingsButton(onOpenSettings: () -> Unit) {
 fun PairNewDeviceScreen(viewModel: MainViewModel, onDismiss: () -> Unit) {
     val connectionState by viewModel.connectionState.collectAsState()
     val pairingState by viewModel.pairingState.collectAsState()
+    val listState = rememberTransformingLazyColumnState()
 
     // Auto-dismiss when connected
     if (connectionState is ConnectionState.Connected) {
@@ -396,139 +366,105 @@ fun PairNewDeviceScreen(viewModel: MainViewModel, onDismiss: () -> Unit) {
         return
     }
 
-    ScalingLazyColumn(
-        modifier = Modifier.fillMaxSize().rotaryFocus(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        item {
-            ListHeader {
-                Text("Pair New Device")
+    val advertising = pairingState as? AncsService.PairingState.Advertising
+
+    ScreenScaffold(
+        scrollState = listState,
+        contentPadding = ScreenPadding,
+        edgeButton = {
+            EdgeButton(
+                onClick = { if (advertising != null) viewModel.stopPairing() else viewModel.startPairing() },
+                colors = if (advertising != null) {
+                    ButtonDefaults.filledTonalButtonColors()
+                } else {
+                    ButtonDefaults.buttonColors()
+                }
+            ) {
+                Text(if (advertising != null) "Stop" else "Start pairing")
             }
         }
+    ) { contentPadding ->
+        TransformingLazyColumn(
+            state = listState,
+            contentPadding = contentPadding,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            item { ListHeader { Text("Pair iPhone") } }
 
-        when (connectionState) {
-            is ConnectionState.Connecting -> {
-                item {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.padding(16.dp)
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            "Connecting to ${(connectionState as ConnectionState.Connecting).deviceName ?: "iPhone"}…",
-                            textAlign = TextAlign.Center,
-                            fontSize = 13.sp
-                        )
-                    }
+            when {
+                connectionState is ConnectionState.Connecting -> item {
+                    BusyCard("Connecting to ${(connectionState as ConnectionState.Connecting).deviceName ?: "iPhone"}")
                 }
-            }
-
-            is ConnectionState.Bonding -> {
-                item {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.padding(16.dp)
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            "On iPhone: tap Pair, then Allow notifications",
-                            textAlign = TextAlign.Center,
-                            fontSize = 13.sp
-                        )
-                    }
+                connectionState is ConnectionState.Bonding -> item {
+                    BusyCard("On iPhone: tap Pair, then Allow notifications")
                 }
-            }
-
-            else -> {
-                when (val pairing = pairingState) {
-                    is AncsService.PairingState.Advertising -> {
-                        item {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                            ) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    "On iPhone open\nSettings → Bluetooth\nand tap:",
-                                    textAlign = TextAlign.Center,
-                                    fontSize = 12.sp,
-                                    color = Color(0xFF9CA3AF)
-                                )
-                                Text(
-                                    pairing.watchName ?: "this watch",
-                                    textAlign = TextAlign.Center,
-                                    fontSize = 14.sp,
-                                    color = Color(0xFF60A5FA)
-                                )
-                            }
-                        }
-                        item {
-                            Button(
-                                onClick = { viewModel.stopPairing() },
-                                modifier = Modifier.fillMaxWidth(0.9f)
-                            ) {
-                                Text("Stop Pairing", fontSize = 12.sp)
-                            }
-                        }
-                    }
-
-                    else -> {
-                        item {
+                advertising != null -> item {
+                    Card(
+                        onClick = { },
+                        enabled = false,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer
+                        )
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(22.dp))
+                            Spacer(Modifier.height(8.dp))
                             Text(
-                                if (pairing is AncsService.PairingState.Failed) pairing.message
-                                else "Makes this watch visible in iPhone Bluetooth settings. No iPhone app needed.",
-                                textAlign = TextAlign.Center,
-                                fontSize = 12.sp,
-                                color = Color(0xFF9CA3AF),
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                "On iPhone open Settings, then Bluetooth, and tap",
+                                style = MaterialTheme.typography.bodyExtraSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                advertising.watchName ?: "this watch",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                textAlign = TextAlign.Center
                             )
                         }
-                        item {
-                            Button(
-                                onClick = { viewModel.startPairing() },
-                                modifier = Modifier.fillMaxWidth(0.9f)
-                            ) {
-                                Text("Start Pairing", fontSize = 12.sp)
-                            }
-                        }
                     }
                 }
-            }
-        }
-
-        item { Spacer(modifier = Modifier.height(8.dp)) }
-
-        // Back button
-        item {
-            Button(
-                onClick = onDismiss,
-                modifier = Modifier.fillMaxWidth(0.9f),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF374151)
-                )
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Rounded.Close,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
+                else -> item {
+                    Text(
+                        (pairingState as? AncsService.PairingState.Failed)?.message
+                            ?: "Makes this watch visible in the iPhone's Bluetooth settings. No iPhone app needed.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp)
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Back", fontSize = 12.sp)
                 }
+            }
+
+            item {
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.childButtonColors(),
+                    label = { Text("Back") }
+                )
             }
         }
     }
 }
 
-private fun batteryColor(percent: Int?): Color = when {
-    percent == null -> Color(0xFF9CA3AF)
-    percent <= 20 -> Color(0xFFEF4444)
-    percent <= 40 -> Color(0xFFFBBF24)
-    else -> Color(0xFF34D399)
+/** Shared list padding: keeps content clear of the round screen's edges. */
+internal val ScreenPadding = PaddingValues(horizontal = 14.dp, vertical = 32.dp)
+
+@Composable
+private fun batteryColor(percent: Int?) = when {
+    percent == null -> MaterialTheme.colorScheme.onSurfaceVariant
+    percent <= 20 -> MaterialTheme.colorScheme.error
+    percent <= 40 -> MaterialTheme.colorScheme.secondary
+    else -> MaterialTheme.colorScheme.tertiary
 }
 
 private fun clockText(status: ClockStatus): String = when {

@@ -78,8 +78,8 @@ android {
 dependencies {
     // Compose for Wear OS
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
-    implementation("androidx.wear.compose:compose-material3:1.0.0-alpha29")
-    implementation("androidx.wear.compose:compose-foundation:1.4.1")
+    implementation("androidx.wear.compose:compose-material3:1.6.2")
+    implementation("androidx.wear.compose:compose-foundation:1.6.2")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui")
 

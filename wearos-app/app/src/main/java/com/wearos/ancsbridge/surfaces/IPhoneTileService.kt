@@ -33,9 +33,11 @@ class IPhoneTileService : TileService() {
     companion object {
         private const val RESOURCES_VERSION = "1"
         private const val ID_TOGGLE = "toggle_play"
-        private const val GREY = 0xFF9CA3AF.toInt()
-        private const val GREEN = 0xFF34D399.toInt()
-        private const val RED = 0xFFEF4444.toInt()
+        // Same roles as the apps Material 3 theme: muted text, healthy link, warning
+        private const val GREY = 0xFFC3C6CF.toInt()
+        private const val GREEN = 0xFF6DD58C.toInt()
+        private const val RED = 0xFFF2B8B5.toInt()
+        private const val BLUE = 0xFFA8C7FA.toInt()
     }
 
     override fun onTileRequest(requestParams: RequestBuilders.TileRequest): ListenableFuture<TileBuilders.Tile> {
@@ -84,7 +86,7 @@ class IPhoneTileService : TileService() {
             .addContent(
                 Text.Builder(this, if (hasTrack) media.title.ifEmpty { media.playerName } else "Nothing playing")
                     .setTypography(Typography.TYPOGRAPHY_BODY1)
-                    .setColor(argb(0xFFFFFFFF.toInt()))
+                    .setColor(argb(0xFFE3E3E7.toInt()))
                     .setMaxLines(1)
                     .build()
             )
@@ -130,7 +132,7 @@ class IPhoneTileService : TileService() {
             .setPrimaryLabelTextContent(
                 Text.Builder(this, "iPhone")
                     .setTypography(Typography.TYPOGRAPHY_CAPTION1)
-                    .setColor(argb(GREY))
+                    .setColor(argb(BLUE))
                     .build()
             )
             .setContent(column.build())

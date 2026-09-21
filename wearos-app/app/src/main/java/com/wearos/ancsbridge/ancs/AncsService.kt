@@ -109,6 +109,8 @@ class AncsService : Service() {
         // Long messages over a low-power connection interval need more than 3 s
         private const val ATTRIBUTE_RESPONSE_TIMEOUT_MS = 6_000L
         private const val APP_NAME_TIMEOUT_MS = 3_000L
+        /** Orbit blue, the same accent the apps Material theme uses. */
+        private const val ACCENT_COLOR = 0xFFA8C7FA.toInt()
         private const val PAIRING_WINDOW_MS = 180_000L
 
         /** Shared connection state observable by the ViewModel */
@@ -988,6 +990,7 @@ class AncsService : Service() {
             .setDeleteIntent(dismissPendingIntent(spec.notifId))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(androidCategory(notification.categoryId))
+            .setColor(ACCENT_COLOR)
             .setSound(android.provider.Settings.System.DEFAULT_NOTIFICATION_URI)
 
         if (spec.stackByApp) {
