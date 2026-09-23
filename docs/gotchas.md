@@ -73,3 +73,5 @@
 36. **Dynamic colour will happily repaint your semantics**: `dynamicColorScheme()` made the "connected" tick lavender. Keep the colours that mean something (success, error) out of the dynamic scheme.
 
 37. **Wear OS drops wireless debugging when it sleeps**, and hands out a new port each time. For a test session keep the watch on its charger, or expect to rediscover it with `adb mdns services` constantly.
+
+38. **The notification header always shows the posting app's name**: it reads "Orbit", not "WhatsApp", and the only override is the `android.substName` extra, gated behind `SUBSTITUTE_NOTIFICATION_APP_NAME` (`signature|privileged`). Tested on the watch: the extra is stripped from the posted notification and the header stays "Orbit". The iPhone app is identified instead by its real icon as the large icon, with Orbit's own icon as the small badge, plus its name in `setSubText`.
