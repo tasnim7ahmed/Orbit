@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Orbit icon background: iOS-style indigo → blue → cyan gradient with a soft top-left gloss -->
+<!--
+  Orbit icon background: a midnight sky, lighter at the top where the light comes from,
+  a few faint stars, and the glow the planet casts. Keep in sync with
+  master-docs/Orbit/orbit-icon.svg.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
@@ -7,31 +11,38 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <path android:pathData="M0,0h108v108h-108z">
-        <aapt:attr name="android:fillColor">
-            <gradient
-                android:type="linear"
-                android:startX="0"
-                android:startY="0"
-                android:endX="108"
-                android:endY="108">
-                <item android:offset="0" android:color="#FF5E5CE6" />
-                <item android:offset="0.55" android:color="#FF0A84FF" />
-                <item android:offset="1" android:color="#FF64D2FF" />
-            </gradient>
-        </aapt:attr>
-    </path>
-
-    <!-- Gloss -->
+    <!-- Sky -->
     <path android:pathData="M0,0h108v108h-108z">
         <aapt:attr name="android:fillColor">
             <gradient
                 android:type="radial"
-                android:centerX="30"
-                android:centerY="18"
-                android:gradientRadius="70">
-                <item android:offset="0" android:color="#40FFFFFF" />
-                <item android:offset="1" android:color="#00FFFFFF" />
+                android:centerX="54"
+                android:centerY="34"
+                android:gradientRadius="84">
+                <item android:offset="0" android:color="#FF2B3284" />
+                <item android:offset="0.5" android:color="#FF141848" />
+                <item android:offset="1" android:color="#FF05061A" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Stars (inside the circle Wear OS crops to) -->
+    <path android:fillColor="#BFFFFFFF" android:pathData="M30.1,34 a0.9,0.9 0 1,0 1.8,0 a0.9,0.9 0 1,0 -1.8,0" />
+    <path android:fillColor="#8CFFFFFF" android:pathData="M75.3,31 a0.7,0.7 0 1,0 1.4,0 a0.7,0.7 0 1,0 -1.4,0" />
+    <path android:fillColor="#66FFFFFF" android:pathData="M35.4,76 a0.6,0.6 0 1,0 1.2,0 a0.6,0.6 0 1,0 -1.2,0" />
+    <path android:fillColor="#73FFFFFF" android:pathData="M78.2,72 a0.8,0.8 0 1,0 1.6,0 a0.8,0.8 0 1,0 -1.6,0" />
+
+    <!-- Glow the planet casts on the sky -->
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="54"
+                android:centerY="54"
+                android:gradientRadius="32">
+                <item android:offset="0" android:color="#8C3D8BFF" />
+                <item android:offset="0.55" android:color="#293D8BFF" />
+                <item android:offset="1" android:color="#003D8BFF" />
             </gradient>
         </aapt:attr>
     </path>

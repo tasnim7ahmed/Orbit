@@ -1,52 +1,85 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="1024" height="1024">
-  <!-- Orbit app icon — same artwork as the Android adaptive icon (res/drawable/ic_launcher_*) -->
+  <!--
+    Orbit app icon: a glass planet (the iPhone) with a satellite (the watch) on a tilted ring,
+    lit from the top left. Same artwork as the Android adaptive icon (res/drawable/ic_launcher_*);
+    this rounded-square version scales the glyph up, the Android one keeps the safe-zone margin.
+  -->
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="108" y2="108" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#5E5CE6"/>
-      <stop offset="0.55" stop-color="#0A84FF"/>
-      <stop offset="1" stop-color="#64D2FF"/>
-    </linearGradient>
-    <radialGradient id="gloss" cx="30" cy="18" r="70" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.25"/>
+    <!-- Midnight sky, lighter where the light comes from -->
+    <radialGradient id="sky" cx="54" cy="34" r="84" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2B3284"/>
+      <stop offset="0.5" stop-color="#141848"/>
+      <stop offset="1" stop-color="#05061A"/>
+    </radialGradient>
+    <!-- Glow the planet casts on the sky -->
+    <radialGradient id="halo" cx="54" cy="54" r="32" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3D8BFF" stop-opacity="0.55"/>
+      <stop offset="0.55" stop-color="#3D8BFF" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#3D8BFF" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Planet body: lit top-left, deep blue in shadow -->
+    <radialGradient id="planet" cx="46" cy="44" r="26" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#A8DDFF"/>
+      <stop offset="0.35" stop-color="#3C9BFF"/>
+      <stop offset="0.75" stop-color="#1450C8"/>
+      <stop offset="1" stop-color="#0A2A78"/>
+    </radialGradient>
+    <!-- Cyan rim light along the planet's edge -->
+    <radialGradient id="rim" cx="54" cy="54" r="17.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0.78" stop-color="#64D2FF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#64D2FF" stop-opacity="0.55"/>
+    </radialGradient>
+    <!-- Specular highlight -->
+    <radialGradient id="spec" cx="47.5" cy="45.5" r="7.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.9"/>
       <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
     </radialGradient>
-    <linearGradient id="screen" x1="44" y1="35" x2="64" y2="73" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#3634A3"/>
-      <stop offset="1" stop-color="#0A6FD6"/>
+    <!-- Ring shaded by depth: brightest in front, dimmest behind, equal where the halves meet -->
+    <linearGradient id="ringFront" x1="0" y1="54" x2="0" y2="63.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.8"/>
+      <stop offset="1" stop-color="#FFFFFF"/>
     </linearGradient>
-    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="1.6"/>
-    </filter>
+    <linearGradient id="ringBack" x1="0" y1="54" x2="0" y2="44.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.8"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.28"/>
+    </linearGradient>
+    <!-- Satellite glow -->
+    <radialGradient id="glow" cx="71.2" cy="61.8" r="7.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#BFE6FF" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#BFE6FF" stop-opacity="0"/>
+    </radialGradient>
     <clipPath id="squircle">
       <rect width="108" height="108" rx="24"/>
     </clipPath>
   </defs>
 
   <g clip-path="url(#squircle)">
-    <rect width="108" height="108" fill="url(#bg)"/>
-    <rect width="108" height="108" fill="url(#gloss)"/>
+    <rect width="108" height="108" fill="url(#sky)"/>
+    <!-- Stars -->
+    <circle cx="31" cy="34" r="0.9" fill="#FFFFFF" fill-opacity="0.75"/>
+    <circle cx="76" cy="31" r="0.7" fill="#FFFFFF" fill-opacity="0.55"/>
+    <circle cx="36" cy="76" r="0.6" fill="#FFFFFF" fill-opacity="0.4"/>
+    <circle cx="79" cy="72" r="0.8" fill="#FFFFFF" fill-opacity="0.45"/>
+    <rect width="108" height="108" fill="url(#halo)"/>
 
-    <!-- Glyph (scaled up for the rounded-square version; the Android icon keeps the safe-zone margin) -->
-    <g transform="translate(54 54) scale(1.18) translate(-54 -54)">
-    <!-- Ring, back half -->
-    <g transform="rotate(-25 54 54)">
-      <path d="M23,54 A31,11.5 0 1,1 85,54" fill="none" stroke="#FFFFFF" stroke-opacity="0.55"
-            stroke-width="2.6" stroke-linecap="round"/>
-    </g>
+    <g transform="translate(54 54) scale(1.2) translate(-54 -54)">
+      <!-- Ring, back half (behind the planet) -->
+      <g transform="rotate(-20 54 54)">
+        <path d="M24,54 A30,9.5 0 0,1 84,54" fill="none" stroke="url(#ringBack)" stroke-width="3" stroke-linecap="round"/>
+      </g>
 
-    <!-- Phone (with soft shadow) -->
-    <rect x="41" y="33.6" width="26" height="44" rx="7" fill="#0B1A4A" fill-opacity="0.28" filter="url(#soft)"/>
-    <rect x="41" y="32" width="26" height="44" rx="7" fill="#FFFFFF"/>
-    <rect x="43.5" y="34.8" width="21" height="38.4" rx="5" fill="url(#screen)"/>
-    <rect x="50" y="37.2" width="8" height="2.6" rx="1.3" fill="#0B0B1A"/>
+      <!-- Planet -->
+      <circle cx="54" cy="54" r="17" fill="url(#planet)"/>
+      <circle cx="54" cy="54" r="17" fill="url(#rim)"/>
+      <ellipse cx="47.5" cy="45.5" rx="7" ry="4.4" transform="rotate(-35 47.5 45.5)" fill="url(#spec)"/>
 
-    <!-- Ring, front half + watch -->
-    <g transform="rotate(-25 54 54)">
-      <path d="M23,54 A31,11.5 0 0,0 85,54" fill="none" stroke="#FFFFFF"
-            stroke-width="2.6" stroke-linecap="round"/>
-      <circle cx="79.4" cy="60.6" r="6" fill="#FFFFFF"/>
-      <circle cx="79.4" cy="60.6" r="3.6" fill="#0A84FF"/>
-    </g>
+      <!-- Ring, front half + satellite -->
+      <g transform="rotate(-20 54 54)">
+        <path d="M24,54 A30,9.5 0 0,0 84,54" fill="none" stroke="url(#ringFront)" stroke-width="3" stroke-linecap="round"/>
+        <!-- Satellite rides the front of the ring, just past the planet's edge -->
+        <circle cx="71.2" cy="61.8" r="7.5" fill="url(#glow)"/>
+        <circle cx="71.2" cy="61.8" r="3.4" fill="#FFFFFF"/>
+      </g>
     </g>
   </g>
 </svg>

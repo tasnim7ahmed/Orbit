@@ -1,25 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Orbit glyph for themed icons (alpha only): phone outline, ring, watch -->
+<!--
+  Orbit glyph for themed icons (alpha only): the planet with the ring cutting a gap through
+  it, so the ring still reads in one colour, and the satellite on the ring.
+  One even-odd path: planet + the ring's outer and inner edges. Inside the planet the band
+  between them is cut out; outside the planet the same band is the visible ring.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:fillType="evenOdd"
-        android:pathData="M48,32 H60 A7,7 0 0 1 67,39 V69 A7,7 0 0 1 60,76 H48 A7,7 0 0 1 41,69 V39 A7,7 0 0 1 48,32 Z M48.5,34.8 H59.5 A5,5 0 0 1 64.5,39.8 V68.2 A5,5 0 0 1 59.5,73.2 H48.5 A5,5 0 0 1 43.5,68.2 V39.8 A5,5 0 0 1 48.5,34.8 Z" />
     <group
         android:pivotX="54"
         android:pivotY="54"
-        android:rotation="-25">
-        <path
-            android:pathData="M23,54 A31,11.5 0 0,0 85,54"
-            android:strokeWidth="2.6"
-            android:strokeColor="#FFFFFFFF"
-            android:strokeLineCap="round" />
+        android:rotation="-20">
         <path
             android:fillColor="#FFFFFFFF"
-            android:pathData="M79.4,60.6 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0" />
+            android:fillType="evenOdd"
+            android:pathData="M37,54 a17,17 0 1,0 34,0 a17,17 0 1,0 -34,0 Z
+                M22.5,54 a31.5,11 0 1,0 63,0 a31.5,11 0 1,0 -63,0 Z
+                M25.5,54 a28.5,8 0 1,0 57,0 a28.5,8 0 1,0 -57,0 Z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M67.8,61.8 a3.4,3.4 0 1,0 6.8,0 a3.4,3.4 0 1,0 -6.8,0" />
     </group>
 </vector>

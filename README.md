@@ -13,11 +13,16 @@ Based on [WearBridge](https://github.com/k97/WearBridge) by Karthik Rajendran (M
   <img src="docs/screenshots/notification.png" width="200" alt="A WhatsApp notification on the watch with the real app icon" />
 </p>
 <p align="center">
-  <img src="docs/screenshots/now-playing.png" width="200" alt="Now Playing showing a Spotify track with transport and skip controls" />
+  <img src="docs/screenshots/now-playing.png" width="200" alt="Now Playing with the song's album art behind the controls" />
+  <img src="docs/screenshots/media-controls.png" width="200" alt="The watch's own media controls playing the iPhone's song, with its album art" />
+</p>
+<p align="center">
   <img src="docs/screenshots/call.png" width="200" alt="Incoming call screen with decline and answer buttons" />
+  <img src="docs/screenshots/in-call.png" width="200" alt="A call in progress on the iPhone, with its running time and End Call" />
 </p>
 <p align="center">
   <img src="docs/screenshots/settings.png" width="200" alt="Settings screen with switches for how notifications behave" />
+  <img src="docs/screenshots/settings-more.png" width="200" alt="More settings: Off wrist and Album art switches" />
   <img src="docs/screenshots/app-settings.png" width="200" alt="Per-app notification settings listing each iPhone app" />
 </p>
 
