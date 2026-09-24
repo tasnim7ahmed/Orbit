@@ -1,5 +1,6 @@
 package com.wearos.ancsbridge.model
 
+import android.graphics.Bitmap
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,18 +21,28 @@ object PhoneStatus {
     private val _clock = MutableStateFlow<ClockStatus?>(null)
     val clock: StateFlow<ClockStatus?> = _clock.asStateFlow()
 
+    /** Album art for the current track, looked up by name; null until found or when there is none. */
+    private val _artwork = MutableStateFlow<Artwork?>(null)
+    val artwork: StateFlow<Artwork?> = _artwork.asStateFlow()
+
     fun setBattery(percent: Int) { _battery.value = percent }
 
     fun updateMedia(transform: (MediaState) -> MediaState) { _media.value = transform(_media.value) }
 
     fun setClock(status: ClockStatus) { _clock.value = status }
 
+    fun setArtwork(artwork: Artwork?) { _artwork.value = artwork }
+
     fun reset() {
         _battery.value = null
         _media.value = MediaState()
         _clock.value = null
+        _artwork.value = null
     }
 }
+
+/** A track's cover, tagged with the track it belongs to (see ArtworkRepository.keyOf). */
+class Artwork(val trackKey: String, val bitmap: Bitmap)
 
 /** Now-playing state mirrored from the iPhone via Apple Media Service (AMS). */
 data class MediaState(
@@ -57,6 +68,9 @@ data class MediaState(
 ) {
     val isPlaying get() = playbackState == PLAYBACK_PLAYING
     val hasTrack get() = title.isNotEmpty() || artist.isNotEmpty()
+
+    /** What to call the track anywhere it is shown: never blank. */
+    val displayTitle get() = title.ifEmpty { artist }.ifEmpty { playerName }.ifEmpty { "iPhone" }
 
     /** "3 of 21", or null when the player doesn't report a queue. */
     val queuePosition: String?

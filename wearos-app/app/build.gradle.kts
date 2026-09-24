@@ -20,14 +20,14 @@ val keystoreProperties: Properties? = run {
 
 android {
     namespace = "com.wearos.ancsbridge"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.wearos.ancsbridge"
         minSdk = 33 // Wear OS 4
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
     }
 
     signingConfigs {
@@ -77,33 +77,35 @@ android {
 
 dependencies {
     // Compose for Wear OS
-    implementation(platform("androidx.compose:compose-bom:2024.12.01"))
+    implementation(platform("androidx.compose:compose-bom:2026.06.01"))
     implementation("androidx.wear.compose:compose-material3:1.6.2")
     implementation("androidx.wear.compose:compose-foundation:1.6.2")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui")
 
     // Activity (also brings ViewModel + viewModelScope)
-    implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.activity:activity-compose:1.13.0")
 
     // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
     // Core
-    implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.core:core-ktx:1.17.0")
 
     // Watch face complications, Tiles, Ongoing Activity (iPhone battery / Now Playing surfaces)
-    implementation("androidx.wear.watchface:watchface-complications-data-source-ktx:1.2.1")
-    implementation("androidx.wear.tiles:tiles:1.4.1")
-    implementation("androidx.wear.protolayout:protolayout:1.2.1")
-    implementation("androidx.wear.protolayout:protolayout-material:1.2.1")
-    implementation("androidx.wear:wear-ongoing:1.0.0")
-    implementation("androidx.concurrent:concurrent-futures-ktx:1.2.0")
+    implementation("androidx.wear.watchface:watchface-complications-data-source-ktx:1.3.0")
+    implementation("androidx.wear.tiles:tiles:1.6.2")
+    implementation("androidx.wear.protolayout:protolayout:1.4.2")
+    implementation("androidx.wear.protolayout:protolayout-material:1.4.2")
+    implementation("androidx.wear:wear-ongoing:1.1.0")
+    // Media session + MediaStyle, so the watch's own media controls can drive the iPhone's player
+    implementation("androidx.media:media:1.8.0")
+    implementation("androidx.concurrent:concurrent-futures-ktx:1.3.0")
 
     // Installs the Compose libraries' baseline profiles on sideload (AOT-compiles hot paths)
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
 
     // Testing
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
 }

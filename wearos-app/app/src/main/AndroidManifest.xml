@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-feature android:name="android.hardware.type.watch" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
@@ -54,8 +55,11 @@
             </intent-filter>
         </activity>
 
+        <!-- No noHistory (WearRecents): the ringing screen must survive the side-button
+             silence, and the in-call screen must survive leaving it to check something -->
         <activity
             android:name=".ui.IncomingCallActivity"
+            tools:ignore="WearRecents"
             android:exported="false"
             android:showOnLockScreen="true"
             android:turnScreenOn="true"

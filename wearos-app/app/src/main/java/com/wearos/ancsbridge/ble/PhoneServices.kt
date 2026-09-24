@@ -22,7 +22,8 @@ import java.util.UUID
  */
 class PhoneServices(
     private val subscribe: (BluetoothGattCharacteristic) -> Unit,
-    private val read: (BluetoothGattCharacteristic) -> Unit,
+    /** Queue a read; the handler, when given, gets this read's value (null if it failed). */
+    private val read: (BluetoothGattCharacteristic, ((ByteArray?) -> Unit)?) -> Unit,
     private val write: (BluetoothGattCharacteristic, ByteArray) -> Unit
 ) {
 
@@ -46,6 +47,7 @@ class PhoneServices(
         val AMS_SERVICE: UUID = UUID.fromString("89D3502B-0F36-433A-8EF4-C502AD55F8DC")
         val AMS_REMOTE_COMMAND: UUID = UUID.fromString("9B3C81D8-57B1-4A8A-B8DF-0E56F7CA51C2")
         val AMS_ENTITY_UPDATE: UUID = UUID.fromString("2F7CABCE-808D-411F-9A0C-BB92BA96C102")
+        val AMS_ENTITY_ATTRIBUTE: UUID = UUID.fromString("C6B2F38C-23AB-46D8-A6AB-A3A870BBD5D7")
     }
 
     private var remoteCommandChar: BluetoothGattCharacteristic? = null
@@ -54,16 +56,16 @@ class PhoneServices(
     fun start(gatt: BluetoothGatt) {
         gatt.getService(BATTERY_SERVICE)?.getCharacteristic(BATTERY_LEVEL)?.let { level ->
             Log.i(TAG, "Battery Service found")
-            read(level)
+            read(level, null)
             if (level.canNotify()) subscribe(level)
         } ?: Log.w(TAG, "Battery Service not available")
 
         gatt.getService(CURRENT_TIME_SERVICE)?.let { cts ->
             Log.i(TAG, "Current Time Service found")
             // Offset first, so the Current Time read can be interpreted immediately
-            cts.getCharacteristic(LOCAL_TIME_INFO)?.let { read(it) }
+            cts.getCharacteristic(LOCAL_TIME_INFO)?.let { read(it, null) }
             cts.getCharacteristic(CURRENT_TIME)?.let { current ->
-                read(current)
+                read(current, null)
                 if (current.canNotify()) subscribe(current)
             }
         } ?: Log.w(TAG, "Current Time Service not available")
@@ -84,6 +86,17 @@ class PhoneServices(
             write(entity, AmsProtocol.SUBSCRIBE_TRACK)
             // Queue gives the position in the playlist plus shuffle and repeat state
             write(entity, AmsProtocol.SUBSCRIBE_QUEUE)
+            // iOS only notifies changes, so a song already playing would stay unknown until
+            // the next track. Read each value once through Entity Attribute: write which
+            // attribute, then read it back.
+            ams.getCharacteristic(AMS_ENTITY_ATTRIBUTE)?.let { attribute ->
+                for ((entityId, attributeId) in AmsProtocol.CURRENT_STATE) {
+                    write(attribute, byteArrayOf(entityId.toByte(), attributeId.toByte()))
+                    read(attribute) { value ->
+                        if (value != null) applyEntity(entityId, attributeId, String(value, Charsets.UTF_8))
+                    }
+                }
+            }
         } ?: Log.w(TAG, "Apple Media Service not available")
     }
 
@@ -107,9 +120,7 @@ class PhoneServices(
             }
             AMS_ENTITY_UPDATE -> {
                 val update = AmsProtocol.parseEntityUpdate(value) ?: return true
-                Log.d(TAG, "AMS update entity=${update.entity} attr=${update.attribute} value='${update.value}'")
-                val now = SystemClock.elapsedRealtime()
-                PhoneStatus.updateMedia { AmsProtocol.apply(it, update, now) }
+                applyEntity(update.entity, update.attribute, update.value)
             }
             AMS_REMOTE_COMMAND -> {
                 val commands = AmsProtocol.parseSupportedCommands(value)
@@ -126,6 +137,15 @@ class PhoneServices(
         val char = remoteCommandChar ?: return false
         write(char, byteArrayOf(command.toByte()))
         return true
+    }
+
+    private fun applyEntity(entity: Int, attribute: Int, value: String) {
+        // IDs only at info level: the value is track text, which stays out of release logs
+        Log.i(TAG, "AMS update entity=$entity attr=$attribute")
+        Log.d(TAG, "AMS value='$value'")
+        val update = AmsProtocol.EntityUpdate(entity, attribute, truncated = false, value = value)
+        val now = SystemClock.elapsedRealtime()
+        PhoneStatus.updateMedia { AmsProtocol.apply(it, update, now) }
     }
 
     fun reset() {

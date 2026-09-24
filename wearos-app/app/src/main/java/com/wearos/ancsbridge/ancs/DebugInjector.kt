@@ -18,8 +18,10 @@ import com.wearos.ancsbridge.model.PhoneStatus
  * only the shell and system hold. Example:
  *   adb shell am broadcast -n com.wearos.ancsbridge/.ancs.DebugInjectReceiver \
  *     --es kind notif --es app net.whatsapp.WhatsApp --es title Alice --es msg Hi --ei cat 4
- * kinds: notif, call, call_end, remove / dismiss (--el uid N),
- * media (--es title --es artist --ez playing)
+ * kinds: notif (--ei cat 12 = call in progress), call, call_end, remove / dismiss (--el uid N),
+ * media (--es title --es artist --es album --ez playing), wrist (--ez off true|false),
+ * mute (--es app BUNDLE_ID [--es name NAME]) — what a notification's "Mute 1 hr" sends,
+ * forget (--es app BUNDLE_ID) — remove a test app from the per-app settings list
  */
 object DebugInjector {
 
@@ -31,7 +33,8 @@ object DebugInjector {
         post: (AncsNotification) -> Unit,
         call: (AncsNotification?) -> Unit,
         remove: (Long) -> Unit,
-        dismiss: (Long) -> Unit
+        dismiss: (Long) -> Unit,
+        wrist: (Boolean) -> Unit
     ) {
         val kind = intent.getStringExtra("kind") ?: return
         val uid = intent.getLongExtra("uid", nextUid++)
@@ -45,12 +48,14 @@ object DebugInjector {
             "call_end" -> call(null)
             "remove" -> remove(uid)
             "dismiss" -> dismiss(uid)
+            "wrist" -> wrist(intent.getBooleanExtra("off", false))
             "media" -> PhoneStatus.updateMedia {
                 it.copy(
                     available = true,
                     playerName = intent.getStringExtra("player") ?: "Spotify",
                     title = intent.getStringExtra("title") ?: "Test Track",
                     artist = intent.getStringExtra("artist") ?: "Test Artist",
+                    album = intent.getStringExtra("album") ?: "",
                     playbackState = if (intent.getBooleanExtra("playing", true)) MediaState.PLAYBACK_PLAYING else MediaState.PLAYBACK_PAUSED,
                     playbackRate = if (intent.getBooleanExtra("playing", true)) 1f else 0f,
                     durationSec = 200.0,
@@ -90,6 +95,21 @@ object DebugInjector {
 /** adb-only entry point for [DebugInjector]; protected by android.permission.DUMP in the manifest. */
 class DebugInjectReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        if (intent.getStringExtra("kind") == "forget") {
+            com.wearos.ancsbridge.settings.AppSettings.init(context)
+            com.wearos.ancsbridge.settings.AppSettings.forget(intent.getStringExtra("app") ?: return)
+            return
+        }
+        if (intent.getStringExtra("kind") == "mute") {
+            // What a notification's "Mute 1 hr" button sends (a locked watch can't be tapped over adb)
+            context.sendBroadcast(
+                Intent(context, NotificationActionReceiver::class.java)
+                    .setAction(NotificationActionReceiver.ACTION_MUTE_APP)
+                    .putExtra(NotificationActionReceiver.EXTRA_BUNDLE_ID, intent.getStringExtra("app") ?: return)
+                    .putExtra(NotificationActionReceiver.EXTRA_APP_NAME, intent.getStringExtra("name"))
+            )
+            return
+        }
         androidx.core.content.ContextCompat.startForegroundService(
             context,
             Intent(context, AncsService::class.java)

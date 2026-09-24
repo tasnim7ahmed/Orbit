@@ -8,6 +8,7 @@ import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.util.Log
+import androidx.core.content.edit
 import com.wearos.ancsbridge.model.ConnectionState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -73,7 +74,7 @@ class BleConnectionManager(private val context: Context) {
     // Battery / Current Time / Apple Media Service on the iPhone
     private val phoneServices = PhoneServices(
         subscribe = { subscribeToCharacteristic(it) },
-        read = { opQueue.enqueue(GattOperationQueue.Op.ReadCharacteristic(it)) },
+        read = { char, onResult -> opQueue.enqueue(GattOperationQueue.Op.ReadCharacteristic(char, onResult)) },
         write = { char, value -> opQueue.enqueue(GattOperationQueue.Op.WriteCharacteristic(char, value)) }
     )
 
@@ -169,7 +170,9 @@ class BleConnectionManager(private val context: Context) {
                         scope.launch {
                             gatt.disconnect()
                             delay(2000)
-                            connect(gatt.device, autoReconnect = false)
+                            // Keep the current reconnect setting: turning it off here left the
+                            // link without its own reconnects for as long as the app ran
+                            connect(gatt.device, autoReconnect = autoReconnect)
                         }
                     } else {
                         Log.e(TAG, "ANCS not found after $MAX_SERVICE_DISCOVERY_RETRIES retries — not an iPhone?")
@@ -232,7 +235,7 @@ class BleConnectionManager(private val context: Context) {
                         if (device.bondState != BluetoothDevice.BOND_BONDED) ensureBonding(device)
                     }
                 } else {
-                    opQueue.onOperationComplete(descriptor.characteristic.uuid)
+                    opQueue.onOperationComplete(descriptor.characteristic.uuid, GattOperationQueue.Kind.DESCRIPTOR_WRITE)
                 }
                 return@GattCallback
             }
@@ -270,13 +273,13 @@ class BleConnectionManager(private val context: Context) {
                 }
             }
 
-            opQueue.onOperationComplete(descriptor.characteristic.uuid)
+            opQueue.onOperationComplete(descriptor.characteristic.uuid, GattOperationQueue.Kind.DESCRIPTOR_WRITE)
         },
         onCharacteristicWritten = { characteristic, status ->
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 Log.e(TAG, "Characteristic write failed: $status for ${characteristic.uuid}")
             }
-            opQueue.onOperationComplete(characteristic.uuid)
+            opQueue.onOperationComplete(characteristic.uuid, GattOperationQueue.Kind.WRITE)
         },
         onMtuChanged = { mtu, status ->
             Log.i(TAG, "MTU negotiated: $mtu (status=$status)")
@@ -284,12 +287,13 @@ class BleConnectionManager(private val context: Context) {
             gatt?.let { startServiceDiscovery(it) }
         },
         onCharacteristicReadCallback = { characteristic, value, status ->
-            if (status == BluetoothGatt.GATT_SUCCESS) {
+            val ok = status == BluetoothGatt.GATT_SUCCESS
+            if (!ok) Log.w(TAG, "Characteristic read failed: $status for ${characteristic.uuid}")
+            // A read with its own result handler gets its value (or null) there
+            if (!opQueue.deliverRead(characteristic.uuid, if (ok) value else null) && ok) {
                 onCharacteristicRead(characteristic.uuid, value)
-            } else {
-                Log.w(TAG, "Characteristic read failed: $status for ${characteristic.uuid}")
             }
-            opQueue.onOperationComplete(characteristic.uuid)
+            opQueue.onOperationComplete(characteristic.uuid, GattOperationQueue.Kind.READ)
         },
         onOtherCharacteristicChanged = { uuid, value ->
             phoneServices.onValue(uuid, value)
@@ -514,7 +518,7 @@ class BleConnectionManager(private val context: Context) {
     }
 
     private fun rememberIPhone(device: BluetoothDevice) {
-        prefs(context).edit().putString(PREF_IPHONE_ADDRESS, device.address).apply()
+        prefs(context).edit { putString(PREF_IPHONE_ADDRESS, device.address) }
     }
 
     /** Start pairing unless the iPhone (or the stack) already started it. */

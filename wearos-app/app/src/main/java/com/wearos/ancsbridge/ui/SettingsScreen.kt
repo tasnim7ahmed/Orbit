@@ -1,5 +1,6 @@
 package com.wearos.ancsbridge.ui
 
+import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -7,6 +8,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -25,6 +28,7 @@ import androidx.wear.compose.material3.SwitchButton
 import androidx.wear.compose.material3.Text
 import com.wearos.ancsbridge.settings.AppSettings
 import com.wearos.ancsbridge.viewmodel.MainViewModel
+import java.util.Date
 
 /**
  * Like the Apple Watch app's Notifications screen: how notifications behave overall,
@@ -36,6 +40,9 @@ fun SettingsScreen(viewModel: MainViewModel, onPairNewDevice: () -> Unit, onDism
     val toggles by viewModel.toggles.collectAsState()
     val apps by viewModel.knownApps.collectAsState()
     val listState = rememberTransformingLazyColumnState()
+    val context = LocalContext.current
+    // Follows the watch's 12/24-hour setting
+    val timeFormat = remember { DateFormat.getTimeFormat(context) }
     BackHandler(onBack = onDismiss)
 
     ScreenScaffold(
@@ -74,6 +81,17 @@ fun SettingsScreen(viewModel: MainViewModel, onPairNewDevice: () -> Unit, onDism
                     viewModel.setToggles(toggles.copy(showMissedWhileAway = it))
                 }
             }
+            item {
+                Toggle("Off wrist", "No buzzing when not worn", toggles.quietOffWrist) {
+                    viewModel.setToggles(toggles.copy(quietOffWrist = it))
+                }
+            }
+            item {
+                // The switch says what leaves the watch: song names go to Apple's search
+                Toggle("Album art", "Looks up songs with Apple", toggles.albumArt) {
+                    viewModel.setToggles(toggles.copy(albumArt = it))
+                }
+            }
 
             item {
                 OutlinedButton(
@@ -101,8 +119,13 @@ fun SettingsScreen(viewModel: MainViewModel, onPairNewDevice: () -> Unit, onDism
             items(apps.size, key = { apps[it].bundleId }) { index ->
                 val app = apps[index]
                 val off = app.mode == AppSettings.AlertMode.OFF
+                // Muted from a notification: the first tap lifts the mute instead of changing the mode
+                val muted = app.isMuted()
                 Button(
-                    onClick = { viewModel.setAppMode(app.bundleId, app.mode.next()) },
+                    onClick = {
+                        if (muted) viewModel.unmuteApp(app.bundleId)
+                        else viewModel.setAppMode(app.bundleId, app.mode.next())
+                    },
                     onLongClick = { viewModel.setAppHaptic(app.bundleId, app.haptic.next()) },
                     onLongClickLabel = "Change vibration",
                     modifier = Modifier.fillMaxWidth(),
@@ -113,11 +136,13 @@ fun SettingsScreen(viewModel: MainViewModel, onPairNewDevice: () -> Unit, onDism
                     },
                     secondaryLabel = {
                         Text(
-                            "${app.mode.label} · ${app.haptic.label}",
-                            color = when (app.mode) {
-                                AppSettings.AlertMode.ALERT -> MaterialTheme.colorScheme.tertiary
-                                AppSettings.AlertMode.QUIET -> MaterialTheme.colorScheme.secondary
-                                AppSettings.AlertMode.OFF -> MaterialTheme.colorScheme.onSurfaceVariant
+                            if (muted) "Muted until ${timeFormat.format(Date(app.mutedUntil))}"
+                            else "${app.mode.label} · ${app.haptic.label}",
+                            color = when {
+                                muted -> MaterialTheme.colorScheme.secondary
+                                app.mode == AppSettings.AlertMode.ALERT -> MaterialTheme.colorScheme.tertiary
+                                app.mode == AppSettings.AlertMode.QUIET -> MaterialTheme.colorScheme.secondary
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
                             },
                             maxLines = 1
                         )

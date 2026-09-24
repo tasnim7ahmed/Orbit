@@ -18,6 +18,9 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
+import androidx.wear.ongoing.OngoingActivity
+import androidx.wear.ongoing.Status
 import com.wearos.ancsbridge.AncsApplication
 import com.wearos.ancsbridge.R
 import com.wearos.ancsbridge.ble.AncsConstants
@@ -30,6 +33,7 @@ import com.wearos.ancsbridge.model.ConnectionState
 import com.wearos.ancsbridge.model.PhoneStatus
 import com.wearos.ancsbridge.media.NowPlayingController
 import com.wearos.ancsbridge.settings.AppSettings
+import com.wearos.ancsbridge.surfaces.SurfaceUpdater
 import com.wearos.ancsbridge.ui.IncomingCallActivity
 import com.wearos.ancsbridge.ui.MainActivity
 import kotlinx.coroutines.CompletableDeferred
@@ -100,6 +104,10 @@ class AncsService : Service() {
         // Keeps notifId + 1_000_000 (dismiss request codes) below the summary range (2_000_000+)
         private const val MAX_NOTIF_ID = 400_000
         private const val MAX_PENDING_CLEARS = 100
+        private const val NOTIF_ID_BLOCK = 50
+        /** ANCS Date attribute: local time, "yyyyMMdd'T'HHmmss". */
+        private val ANCS_DATE: java.time.format.DateTimeFormatter =
+            java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss", java.util.Locale.ROOT)
         // ASCII unit separator — cannot appear in notification text
         private val UNIT_SEPARATOR = 31.toChar().toString()
         const val EXTRA_MEDIA_COMMAND = "media_command"
@@ -112,6 +120,8 @@ class AncsService : Service() {
         /** Orbit blue, the same accent the apps Material theme uses. */
         private const val ACCENT_COLOR = 0xFFA8C7FA.toInt()
         private const val PAIRING_WINDOW_MS = 180_000L
+        /** Longest call age trusted from a re-announced call's date (clock skew guard). */
+        private const val MAX_CALL_AGE_MS = 12 * 60 * 60_000L
 
         /** Shared connection state observable by the ViewModel */
         private val _sharedConnectionState = MutableStateFlow<ConnectionState>(ConnectionState.Idle)
@@ -153,6 +163,15 @@ class AncsService : Service() {
     // Repeating vibration for incoming calls
     private lateinit var ringer: Ringer
     private lateinit var nowPlaying: NowPlayingController
+    private lateinit var wrist: WristDetector
+
+    /**
+     * The call in progress on the iPhone (ANCS category 12), shown with a running timer
+     * and as an ongoing activity on the watch face. [startedElapsed] is in the
+     * SystemClock.elapsedRealtime() base, [startedWall] the same moment in wall-clock time.
+     */
+    private data class OngoingCall(val uid: Long, val notifId: Int, val startedElapsed: Long, val startedWall: Long)
+    private var ongoingCall: OngoingCall? = null
 
     // ANCS session counter — bumped on each new subscription. Watch-side dismissals
     // only clear the iPhone notification if it was posted in the current session,
@@ -185,7 +204,6 @@ class AncsService : Service() {
     private var missedWindowStart = 0L
     private var linkHeartbeatJob: Job? = null
     private var leftBehindJob: Job? = null
-    private var surfaceUpdateJob: Job? = null
     /** When the iPhone link went down, for deciding how often to advertise. 0 = link is up. */
     private var awaySince = 0L
     private var lastScreenOnRetry = 0L
@@ -211,10 +229,19 @@ class AncsService : Service() {
         notificationManager = getSystemService(NotificationManager::class.java)
         ringer = Ringer(this)
         AppSettings.init(this)
-        nowPlaying = NowPlayingController(this, scope) {
-            System.currentTimeMillis() - connectionManager.sessionStartedAt < 8_000L
-        }
+        nowPlaying = NowPlayingController(
+            this, scope,
+            isSessionStarting = { System.currentTimeMillis() - connectionManager.sessionStartedAt < 8_000L },
+            sendCommand = { connectionManager.sendMediaCommand(it) }
+        )
         nowPlaying.start()
+        wrist = WristDetector(this) { offWrist ->
+            // Taken off mid-ring: stop buzzing on the table (the call screen stays)
+            if (offWrist && AppSettings.toggles.value.quietOffWrist && ringer.isRinging) {
+                ringer.stop("taken off the wrist")
+            }
+        }
+        wrist.start()
 
         // Register bond state receiver
         // All three are system broadcasts; no other app may send them to us
@@ -255,7 +282,7 @@ class AncsService : Service() {
         scope.launch {
             PhoneStatus.battery.collect {
                 refreshServiceNotification()
-                requestSurfaceUpdate()
+                SurfaceUpdater.request(this@AncsService, SurfaceUpdater.BATTERY)
             }
         }
 
@@ -294,7 +321,7 @@ class AncsService : Service() {
                     is ConnectionState.Idle, is ConnectionState.Error -> onLinkDown(unexpected = false)
                     else -> {}
                 }
-                requestSurfaceUpdate()
+                SurfaceUpdater.request(this@AncsService)
             }
         }
 
@@ -320,6 +347,7 @@ class AncsService : Service() {
             }
             ACTION_MEDIA_COMMAND -> {
                 val command = intent.getIntExtra(EXTRA_MEDIA_COMMAND, -1)
+                if (command >= 0) nowPlaying.onWatchCommand()
                 if (command >= 0 && !connectionManager.sendMediaCommand(command)) {
                     Log.w(TAG, "Media command $command dropped — Apple Media Service not connected")
                 }
@@ -359,7 +387,9 @@ class AncsService : Service() {
                 val bundleId = intent.getStringExtra(EXTRA_BUNDLE_ID) ?: return START_STICKY
                 val ids = posted.filterValues { it.bundleId == bundleId }.keys.toList()
                 Log.i(TAG, "App stack dismissed on watch: $bundleId (${ids.size})")
-                ids.forEach { onWatchDismissed(it) }
+                // The whole stack is gone, summary included: no need to re-count it per child
+                ids.forEach { onWatchDismissed(it, refreshSummary = false) }
+                notificationManager.cancel(summaryIdFor(bundleId))
             }
             ACTION_SILENCE_RING -> ringer.stop("silenced on watch")
             ACTION_ADVERTISE_BURST -> onAdvertiseBurstAlarm()
@@ -369,7 +399,8 @@ class AncsService : Service() {
                 dismiss = { uid ->
                     (notifIdForUid(uid) ?: posted.entries.firstOrNull { it.value.uid == uid }?.key)
                         ?.let { onWatchDismissed(it) }
-                }
+                },
+                wrist = { off -> wrist.simulate(off) }
             )
             ACTION_STOP -> {
                 stopPairing()
@@ -399,6 +430,7 @@ class AncsService : Service() {
         advertiser.destroy()
         ringer.stop("service destroyed")
         nowPlaying.stop()
+        wrist.stop()
         _pairingState.value = PairingState.Off
         connectionManager.destroy()
         attributeRequestQueue.close()
@@ -455,7 +487,8 @@ class AncsService : Service() {
             Log.d(TAG, "Ignoring link from ${device.address} (not pairing, not our iPhone)")
             return
         }
-        Log.i(TAG, "Incoming link from ${device.address} (pairing=$pairing), attaching GATT client")
+        Log.i(TAG, "Incoming link (pairing=$pairing), attaching GATT client")
+        Log.d(TAG, "Incoming link from ${device.address}")
         connectionManager.connect(device)
     }
 
@@ -662,6 +695,16 @@ class AncsService : Service() {
             event.isRemoved -> {
                 // Cleared/handled on the iPhone → remove from the watch (two-way sync)
                 notifIdForUid(event.notificationUid)?.let { removeWatchNotification(it) }
+                // By tracking too: "Clear Notifications" forgets UIDs, and a call must not keep ticking
+                ongoingCall?.takeIf { it.uid == event.notificationUid }?.let {
+                    notificationManager.cancel(it.notifId)
+                    ongoingCall = null
+                    // Close the in-call screen if it is open (not another call's ringing screen)
+                    sendBroadcast(
+                        Intent(IncomingCallActivity.ACTION_CALL_ENDED).setPackage(packageName)
+                            .putExtra(IncomingCallActivity.EXTRA_NOTIFICATION_UID, it.uid)
+                    )
+                }
                 uidToNotifId.remove(event.notificationUid)
                 backlogUids.remove(event.notificationUid)
                 modifiedUids.remove(event.notificationUid)
@@ -675,6 +718,8 @@ class AncsService : Service() {
                     AncsConnectionService.endActiveCall()
                     sendBroadcast(Intent(IncomingCallActivity.ACTION_CALL_ENDED).apply {
                         setPackage(packageName)
+                        // Only this call's screen: a call in progress keeps its in-call screen
+                        putExtra(IncomingCallActivity.EXTRA_NOTIFICATION_UID, event.notificationUid)
                     })
                 }
             }
@@ -787,7 +832,7 @@ class AncsService : Service() {
             return
         }
         appNameCache[appId] = name
-        appNamePrefs().edit().putString(appId, name).apply()
+        appNamePrefs().edit { putString(appId, name) }
         Log.i(TAG, "Resolved the display name for $appId from the iPhone")
     }
 
@@ -839,7 +884,7 @@ class AncsService : Service() {
         }
 
         if (notification.categoryId == AncsConstants.CATEGORY_ACTIVE_CALL) {
-            showActiveCall(updatedNotification)
+            showActiveCall(updatedNotification, reannounced = isBacklog)
             return
         }
 
@@ -890,6 +935,9 @@ class AncsService : Service() {
         // Mirror iPhone quiet delivery (Focus, Deliver Quietly) via the ANCS Silent flag
         val silentOnIPhone = notification.eventFlags and AncsConstants.EVENT_FLAG_SILENT != 0
         if (silentOnIPhone || appSettings?.mode == AppSettings.AlertMode.QUIET) quiet = true
+        // "Mute for 1 hour" from a notification, and a watch that is not being worn
+        val muted = appSettings?.isMuted() == true
+        if (muted || isQuietOffWrist()) quiet = true
 
         // Route Clock/Reminders/Calendar to the schedule channel regardless of ANCS category
         val scheduleApps = setOf("com.apple.mobiletimer", "com.apple.reminders", "com.apple.mobilecal")
@@ -925,7 +973,8 @@ class AncsService : Service() {
             appName = appName,
             // Updates (MODIFIED) refresh the content without buzzing again
             alertOnce = isUpdate,
-            stackByApp = AppSettings.toggles.value.stackByApp
+            stackByApp = AppSettings.toggles.value.stackByApp,
+            offerMute = !muted
         )
 
         if (notifId !in posted) evictOldestIfNeeded()
@@ -963,7 +1012,9 @@ class AncsService : Service() {
         val notifTime: Long,
         val appName: String?,
         val alertOnce: Boolean,
-        val stackByApp: Boolean
+        val stackByApp: Boolean,
+        /** Show "Mute 1 hr" (not when the app is already muted) */
+        val offerMute: Boolean
     )
 
     private fun buildAppNotification(spec: PostSpec, appIcon: Bitmap): Notification {
@@ -1046,10 +1097,28 @@ class AncsService : Service() {
             builder.addAction(R.drawable.ic_close, negativeLabel, negativeIntent)
         }
 
+        // Watch-only, like Apple Watch's "Mute for 1 hour": later ones from this app arrive quietly
+        if (spec.offerMute && notification.appIdentifier.isNotEmpty()) {
+            builder.addAction(R.drawable.ic_mute, "Mute 1 hr", mutePendingIntent(spec))
+        }
+
         // Never call setNotificationSilent() — it suppresses the heads-up overlay
         // on Wear OS. Quiet delivery uses the IMPORTANCE_LOW quiet channel instead.
         return builder.build()
     }
+
+    private fun mutePendingIntent(spec: PostSpec): PendingIntent =
+        PendingIntent.getBroadcast(
+            this, spec.notifId + 3_500_000,
+            Intent(this, NotificationActionReceiver::class.java)
+                .setAction(NotificationActionReceiver.ACTION_MUTE_APP)
+                .putExtra(NotificationActionReceiver.EXTRA_BUNDLE_ID, spec.notification.appIdentifier)
+                .putExtra(NotificationActionReceiver.EXTRA_APP_NAME, spec.appName ?: spec.notification.appIdentifier),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+    /** The watch is off the wrist and the user wants it silent then. */
+    private fun isQuietOffWrist() = wrist.isOffWrist && AppSettings.toggles.value.quietOffWrist
 
     private fun appGroupKey(bundleId: String) = "app_$bundleId"
 
@@ -1062,6 +1131,9 @@ class AncsService : Service() {
      * doesn't get its summary re-posted mid-teardown.
      */
     private fun updateAppSummary(bundleId: String, appName: String?, icon: Bitmap?, iconResId: Int?) {
+        // Asked of the system rather than taken from `posted`: tapping a notification
+        // removes it (auto-cancel) without telling the app, so `posted` can list ones
+        // that are already gone
         val showing = notificationManager.activeNotifications.map { it.id }.toSet()
         val children = posted.filter { (id, p) -> p.bundleId == bundleId && id in showing }
         val summaryId = summaryIdFor(bundleId)
@@ -1107,12 +1179,12 @@ class AncsService : Service() {
         )
 
     /** User swiped a notification away on the watch → clear it on the iPhone as well. */
-    private fun onWatchDismissed(notifId: Int) {
+    private fun onWatchDismissed(notifId: Int, refreshSummary: Boolean = true) {
         val p = posted.remove(notifId) ?: return
         activeNotificationIds.remove(notifId)
         Log.i(TAG, "Dismissed on watch: uid=${p.uid} app=${p.bundleId}")
         clearOnIPhone(p)
-        updateAppSummary(p.bundleId, null, AppIconRepository.peek(p.bundleId), null)
+        if (refreshSummary) updateAppSummary(p.bundleId, null, AppIconRepository.peek(p.bundleId), null)
     }
 
     /**
@@ -1208,6 +1280,12 @@ class AncsService : Service() {
             AncsConnectionService.endActiveCall()
             sendBroadcast(Intent(IncomingCallActivity.ACTION_CALL_ENDED).setPackage(packageName))
         }
+        // Its timer would run on forever; iOS re-announces the call if it is still going
+        ongoingCall?.let {
+            notificationManager.cancel(it.notifId)
+            ongoingCall = null
+            sendBroadcast(Intent(IncomingCallActivity.ACTION_CALL_ENDED).setPackage(packageName))
+        }
 
         if (unexpected && AppSettings.toggles.value.leftBehindAlert) {
             leftBehindJob?.cancel()
@@ -1220,7 +1298,8 @@ class AncsService : Service() {
                 try {
                     // Short blips reconnect within seconds — only alert if it stays down
                     kotlinx.coroutines.delay(LEFT_BEHIND_DELAY_MS)
-                    if (connectionManager.connectionState.value !is ConnectionState.Connected) {
+                    // Nobody to warn if the watch is not being worn (on its charger, say)
+                    if (connectionManager.connectionState.value !is ConnectionState.Connected && !isQuietOffWrist()) {
                         showLeftBehindAlert()
                     }
                 } finally {
@@ -1231,8 +1310,7 @@ class AncsService : Service() {
     }
 
     private fun markLinkUp() {
-        getSharedPreferences("wearbridge", MODE_PRIVATE).edit()
-            .putLong(PREF_LAST_LINK_UP, System.currentTimeMillis()).apply()
+        getSharedPreferences("wearbridge", MODE_PRIVATE).edit { putLong(PREF_LAST_LINK_UP, System.currentTimeMillis()) }
     }
 
     /** Like Apple Watch's "iPhone disconnected": one buzz, cleared on reconnect. */
@@ -1253,15 +1331,6 @@ class AncsService : Service() {
         notificationManager.notify(NOTIFICATION_ID_LEFT_BEHIND, alert)
     }
 
-    /** Coalesce complication/tile refreshes — battery, link and media change in bursts. */
-    private fun requestSurfaceUpdate() {
-        surfaceUpdateJob?.cancel()
-        surfaceUpdateJob = scope.launch {
-            kotlinx.coroutines.delay(500)
-            com.wearos.ancsbridge.surfaces.SurfaceUpdater.requestAll(this@AncsService)
-        }
-    }
-
     // Debug injection (adb only) — feeds the real pipeline without an iPhone event
     private fun debugPost(n: AncsNotification) { scope.launch { postNotification(n) } }
     private fun debugCall(n: AncsNotification?) {
@@ -1274,31 +1343,81 @@ class AncsService : Service() {
     }
 
     /**
-     * Call in progress on the iPhone: silent ongoing notification with End Call,
-     * which sends the negative action (hang up). Cleared by the REMOVED event.
+     * Call in progress on the iPhone: silent ongoing notification with End Call, which sends
+     * the negative action (hang up), and a running call timer. As an ongoing activity it
+     * puts a call icon on the watch face, like Apple Watch's green phone indicator.
+     * Cleared by the REMOVED event.
+     *
+     * [reannounced]: iOS re-sent the call after a reconnect, so its ANCS date, not now, is
+     * the best estimate of when it began.
      */
-    private fun showActiveCall(notification: AncsNotification) {
-        val notifId = uidToNotifId.getOrPut(notification.uid) { allocateNotifId() }
+    private fun showActiveCall(notification: AncsNotification, reannounced: Boolean) {
+        val call = ongoingCall?.takeIf { it.uid == notification.uid } ?: run {
+            val nowWall = System.currentTimeMillis()
+            val nowElapsed = SystemClock.elapsedRealtime()
+            val sinceMs = if (reannounced && notification.date != null) {
+                (nowWall - parseAncsDate(notification.date)).coerceIn(0L, MAX_CALL_AGE_MS)
+            } else 0L
+            OngoingCall(
+                uid = notification.uid,
+                notifId = uidToNotifId.getOrPut(notification.uid) { allocateNotifId() },
+                startedElapsed = nowElapsed - sinceMs,
+                startedWall = nowWall - sinceMs
+            )
+        }
+        ongoingCall = call
+
+        val callerName = notification.title.ifEmpty { "Call" }
+        val hasEndCall = notification.eventFlags and AncsConstants.EVENT_FLAG_NEGATIVE_ACTION != 0
+        // Tapping the indicator or the notification opens the in-call screen
+        val open = PendingIntent.getActivity(
+            this, 41,
+            IncomingCallActivity.inCallIntent(
+                this, notification.uid, callerName, call.startedElapsed,
+                if (hasEndCall) notification.negativeActionLabel ?: "End Call" else null
+            ),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         val builder = NotificationCompat.Builder(this, AncsApplication.CHANNEL_SERVICE)
             .setSmallIcon(R.drawable.ic_phone)
-            .setContentTitle(notification.title.ifEmpty { "Call" })
+            .setContentTitle(callerName)
             .setContentText("On call · iPhone")
             .setCategory(Notification.CATEGORY_CALL)
+            .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setSilent(true)
-        val hasEndCall = notification.eventFlags and AncsConstants.EVENT_FLAG_NEGATIVE_ACTION != 0
+            // Call duration, counting up from when the call began
+            .setWhen(call.startedWall)
+            .setShowWhen(true)
+            .setUsesChronometer(true)
         if (hasEndCall) {
             builder.addAction(
-                R.drawable.ic_call_decline,
+                R.drawable.ic_orbit_call_decline,
                 notification.negativeActionLabel ?: "End Call",
-                actionPendingIntent(NotificationActionReceiver.ACTION_NEGATIVE, notification.uid, notifId + 500_000)
+                actionPendingIntent(NotificationActionReceiver.ACTION_NEGATIVE, notification.uid, call.notifId + 500_000)
             )
         }
-        notificationManager.notify(notifId, builder.build())
+        OngoingActivity.Builder(this, call.notifId, builder)
+            .setStaticIcon(R.drawable.ic_phone)
+            .setTouchIntent(open)
+            .setCategory(Notification.CATEGORY_CALL)
+            .setStatus(
+                Status.Builder()
+                    .addTemplate("#name# · #time#")
+                    .addPart("name", Status.TextPart(callerName))
+                    .addPart("time", Status.StopwatchPart(call.startedElapsed))
+                    .build()
+            )
+            .build()
+            .apply(this)
+        notificationManager.notify(call.notifId, builder.build())
         Log.i(TAG, "Active call notification uid=${notification.uid}")
     }
 
+    // The call screen is started from this service, outside any task: NEW_TASK and
+    // CLEAR_TOP (reuse a call screen already up) are what make that work
+    @SuppressLint("WearRecents")
     private fun showIncomingCall(notification: AncsNotification) {
         val callerName = notification.title.ifEmpty { "Incoming Call" }
         val appName = notification.appDisplayName ?: "Phone"
@@ -1320,8 +1439,8 @@ class AncsService : Service() {
         activeCallUid = notification.uid
 
         // Keep buzzing until answered/declined/silenced — unless the iPhone delivered
-        // the call silently (Focus / silenced unknown callers)
-        if (notification.eventFlags and AncsConstants.EVENT_FLAG_SILENT == 0) {
+        // the call silently (Focus / silenced unknown callers) or the watch is off the wrist
+        if (notification.eventFlags and AncsConstants.EVENT_FLAG_SILENT == 0 && !isQuietOffWrist()) {
             ringer.start()
         }
 
@@ -1407,6 +1526,11 @@ class AncsService : Service() {
         Log.i(TAG, "Perform action $actionId on uid=$uid (queued=$sent)")
         // Cancel the Android notification and remove from tracking
         notifIdForUid(uid)?.let { removeWatchNotification(it) }
+        // By tracking too: "Clear Notifications" may have forgotten the UID's mapping
+        ongoingCall?.takeIf { it.uid == uid }?.let {
+            notificationManager.cancel(it.notifId)
+            ongoingCall = null
+        }
 
         // Call answered/declined from the watch: stop ringing UI right away instead
         // of waiting for the iPhone's MODIFIED/REMOVED event
@@ -1443,8 +1567,8 @@ class AncsService : Service() {
     private fun parseAncsDate(date: String?): Long {
         if (date == null) return System.currentTimeMillis()
         return try {
-            val sdf = java.text.SimpleDateFormat("yyyyMMdd'T'HHmmss", java.util.Locale.US)
-            sdf.parse(date)?.time ?: System.currentTimeMillis()
+            java.time.LocalDateTime.parse(date.trim(), ANCS_DATE)
+                .atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
         } catch (_: Exception) {
             System.currentTimeMillis()
         }
@@ -1453,7 +1577,10 @@ class AncsService : Service() {
     private fun androidCategory(categoryId: Int): String = when (categoryId) {
         AncsConstants.CATEGORY_INCOMING_CALL -> Notification.CATEGORY_CALL
         AncsConstants.CATEGORY_MISSED_CALL -> Notification.CATEGORY_MISSED_CALL
-        AncsConstants.CATEGORY_VOICEMAIL -> Notification.CATEGORY_VOICEMAIL
+        // CATEGORY_VOICEMAIL exists from API 35; before that a missed call is the closest
+        AncsConstants.CATEGORY_VOICEMAIL ->
+            if (android.os.Build.VERSION.SDK_INT >= 35) Notification.CATEGORY_VOICEMAIL
+            else Notification.CATEGORY_MISSED_CALL
         AncsConstants.CATEGORY_SOCIAL -> Notification.CATEGORY_SOCIAL
         AncsConstants.CATEGORY_SCHEDULE -> Notification.CATEGORY_EVENT
         AncsConstants.CATEGORY_EMAIL -> Notification.CATEGORY_EMAIL
@@ -1469,12 +1596,21 @@ class AncsService : Service() {
      * Persisted so IDs stay unique across service restarts too.
      */
     private fun allocateNotifId(): Int {
-        val prefs = getSharedPreferences("wearbridge", MODE_PRIVATE)
-        var next = prefs.getInt(PREF_NEXT_NOTIF_ID, NOTIFICATION_ID_BASE)
-        if (next !in NOTIFICATION_ID_BASE until MAX_NOTIF_ID) next = NOTIFICATION_ID_BASE
-        prefs.edit().putInt(PREF_NEXT_NOTIF_ID, next + 1).apply()
-        return next
+        // IDs are reserved on disk a block at a time instead of one write per notification.
+        // After a restart the rest of a block is skipped, which only matters for uniqueness.
+        if (nextNotifId !in NOTIFICATION_ID_BASE until reservedNotifIdLimit) {
+            var start = nextNotifId.takeIf { it in NOTIFICATION_ID_BASE until MAX_NOTIF_ID }
+                ?: getSharedPreferences("wearbridge", MODE_PRIVATE).getInt(PREF_NEXT_NOTIF_ID, NOTIFICATION_ID_BASE)
+            if (start !in NOTIFICATION_ID_BASE until MAX_NOTIF_ID) start = NOTIFICATION_ID_BASE
+            reservedNotifIdLimit = minOf(start + NOTIF_ID_BLOCK, MAX_NOTIF_ID)
+            getSharedPreferences("wearbridge", MODE_PRIVATE).edit { putInt(PREF_NEXT_NOTIF_ID, reservedNotifIdLimit) }
+            nextNotifId = start
+        }
+        return nextNotifId++
     }
+
+    private var nextNotifId = -1
+    private var reservedNotifIdLimit = -1
 
     /** Identity of a notification across sessions (its UID changes, its content doesn't). */
     private fun signatureOf(n: AncsNotification) =

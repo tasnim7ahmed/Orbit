@@ -59,7 +59,7 @@ class NowPlayingComplicationService : SuspendingComplicationDataSourceService() 
 
     private fun build(type: ComplicationType, media: MediaState): ComplicationData? {
         val hasTrack = media.available && media.hasTrack && SurfaceUpdater.isConnected
-        val title = if (hasTrack) media.title.ifEmpty { media.playerName } else "Not playing"
+        val title = if (hasTrack) media.displayTitle else "Not playing"
         val icon = MonochromaticImage.Builder(Icon.createWithResource(this, R.drawable.ic_music)).build()
         val tap = SurfaceUpdater.openApp(this, media = true)
         val description = text(if (hasTrack) "Now playing $title" else "Nothing playing on iPhone")
@@ -69,7 +69,7 @@ class NowPlayingComplicationService : SuspendingComplicationDataSourceService() 
                     .setMonochromaticImage(icon).setTapAction(tap).build()
             ComplicationType.LONG_TEXT ->
                 LongTextComplicationData.Builder(text(title), description)
-                    .setTitle(text(if (hasTrack) media.artist.ifEmpty { media.playerName } else "iPhone"))
+                    .setTitle(text(if (hasTrack) media.artist.ifEmpty { media.playerName }.ifEmpty { "iPhone" } else "iPhone"))
                     .setMonochromaticImage(icon).setTapAction(tap).build()
             else -> null
         }

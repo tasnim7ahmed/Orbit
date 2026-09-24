@@ -58,6 +58,12 @@ class DataSourceAssembler {
     private var appIdentifier: String = ""
     private var headerParsed = false
 
+    // What was asked for. A reply for anything else is a late answer to an earlier request
+    // (it timed out), and must not be taken for, or wipe out, the one being waited for.
+    private var expectedCommand = -1
+    private var expectedUid = -1L
+    private var expectedAppId = ""
+
     // Parsed attributes
     private val attributes = mutableMapOf<Int, String>()
 
@@ -90,6 +96,8 @@ class DataSourceAssembler {
     ) {
         reset()
         notificationUid = uid
+        expectedCommand = AncsConstants.COMMAND_GET_NOTIFICATION_ATTRIBUTES
+        expectedUid = uid
         expectedAttributes = requestedAttributes
         categoryId = category
         eventFlags = flags
@@ -104,6 +112,8 @@ class DataSourceAssembler {
     fun expectAppAttributes(appId: String, requestedAttributes: List<Int>) {
         reset()
         appIdentifier = appId
+        expectedCommand = AncsConstants.COMMAND_GET_APP_ATTRIBUTES
+        expectedAppId = appId
         expectedAttributes = requestedAttributes
         state = State.READING_HEADER
     }
@@ -141,10 +151,22 @@ class DataSourceAssembler {
             commandId = bytes[0].toInt() and 0xFF
             offset = 1
 
+            if (commandId != expectedCommand) {
+                // The tail of a late response, or a reply to the other kind of request.
+                // Drop these bytes and keep waiting: resetting here would throw away the
+                // response that is on its way.
+                Log.w(TAG, "Discarding Data Source bytes that don't start the awaited response")
+                return discard()
+            }
             when (commandId) {
                 AncsConstants.COMMAND_GET_NOTIFICATION_ATTRIBUTES -> {
                     if (bytes.size < 5) return null // Need at least CommandID + UID
-                    notificationUid = readUInt32LE(bytes, 1)
+                    val uid = readUInt32LE(bytes, 1)
+                    if (uid != expectedUid) {
+                        Log.w(TAG, "Discarding a late response for another notification")
+                        return discard()
+                    }
+                    notificationUid = uid
                     offset = 5
                     headerParsed = true
                     state = State.READING_ATTRIBUTES
@@ -153,15 +175,15 @@ class DataSourceAssembler {
                     // Read null-terminated app identifier
                     val nullIndex = bytes.indexOf(0.toByte(), fromIndex = 1)
                     if (nullIndex == -1) return null // Haven't received full app ID yet
-                    appIdentifier = String(bytes, 1, nullIndex - 1, Charsets.UTF_8)
+                    val appId = String(bytes, 1, nullIndex - 1, Charsets.UTF_8)
+                    if (appId != expectedAppId) {
+                        Log.w(TAG, "Discarding a late response for another app")
+                        return discard()
+                    }
+                    appIdentifier = appId
                     offset = nullIndex + 1
                     headerParsed = true
                     state = State.READING_ATTRIBUTES
-                }
-                else -> {
-                    Log.w(TAG, "Unknown command ID: $commandId")
-                    reset()
-                    return null
                 }
             }
         }
@@ -227,6 +249,12 @@ class DataSourceAssembler {
 
         // Still need more data
         compactBuffer(bytes, offset)
+        return null
+    }
+
+    /** Drop the buffered bytes but keep waiting for the requested response. */
+    private fun discard(): DataSourceResult? {
+        buffer.reset()
         return null
     }
 
@@ -303,6 +331,9 @@ class DataSourceAssembler {
         notificationUid = 0
         appIdentifier = ""
         headerParsed = false
+        expectedCommand = -1
+        expectedUid = -1L
+        expectedAppId = ""
         attributes.clear()
         expectedAttributes = emptyList()
         currentAttrId = -1

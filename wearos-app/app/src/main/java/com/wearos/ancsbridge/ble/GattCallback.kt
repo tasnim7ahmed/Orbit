@@ -36,11 +36,13 @@ class GattCallback(
         Log.d(TAG, "Connection state changed: status=$status newState=$newState")
         when (newState) {
             BluetoothProfile.STATE_CONNECTED -> {
-                Log.i(TAG, "Connected to ${gatt.device.address}")
+                Log.i(TAG, "Connected")
+                Log.d(TAG, "Connected to ${gatt.device.address}")
                 onConnected(gatt)
             }
             BluetoothProfile.STATE_DISCONNECTED -> {
-                Log.i(TAG, "Disconnected from ${gatt.device.address} status=$status")
+                Log.i(TAG, "Disconnected, status=$status")
+                Log.d(TAG, "Disconnected from ${gatt.device.address}")
                 onDisconnected(gatt, status)
             }
         }

@@ -32,12 +32,17 @@ class GattOperationQueue(
         private const val OPERATION_TIMEOUT_MS = 5_000L
     }
 
+    /** What a GATT callback reports completing; matched together with the UUID. */
+    enum class Kind { DESCRIPTOR_WRITE, WRITE, READ }
+
     sealed class Op {
         /** Characteristic this operation targets — completions are matched against it. */
         abstract val uuid: UUID
+        abstract val kind: Kind
 
         class WriteDescriptor(val descriptor: BluetoothGattDescriptor, val value: ByteArray) : Op() {
             override val uuid: UUID get() = descriptor.characteristic.uuid
+            override val kind get() = Kind.DESCRIPTOR_WRITE
             override fun toString() = "WriteDescriptor($uuid)"
         }
         class WriteCharacteristic(
@@ -46,10 +51,20 @@ class GattOperationQueue(
             val writeType: Int = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
         ) : Op() {
             override val uuid: UUID get() = characteristic.uuid
+            override val kind get() = Kind.WRITE
             override fun toString() = "WriteCharacteristic($uuid)"
         }
-        class ReadCharacteristic(val characteristic: BluetoothGattCharacteristic) : Op() {
+        /**
+         * [onResult], when given, receives this read's value, or null if it failed, timed
+         * out or could not start. Tying the answer to the read itself keeps several reads of
+         * one characteristic apart, which a lookup by UUID could not.
+         */
+        class ReadCharacteristic(
+            val characteristic: BluetoothGattCharacteristic,
+            val onResult: ((ByteArray?) -> Unit)? = null
+        ) : Op() {
             override val uuid: UUID get() = characteristic.uuid
+            override val kind get() = Kind.READ
             override fun toString() = "ReadCharacteristic($uuid)"
         }
     }
@@ -68,13 +83,28 @@ class GattOperationQueue(
      * characteristic it was for. A late callback for an operation that already timed
      * out is ignored, so it can't prematurely "complete" the next one.
      */
-    fun onOperationComplete(uuid: UUID) {
+    fun onOperationComplete(uuid: UUID, kind: Kind) {
         val current = inFlight ?: return
-        if (current.uuid != uuid) {
-            Log.w(TAG, "Ignoring completion for $uuid while waiting for $current")
+        // The kind matters too: AMS Entity Attribute alternates a write and a read on one
+        // characteristic, and a read answered after its timeout must not complete the write
+        if (current.uuid != uuid || current.kind != kind) {
+            Log.w(TAG, "Ignoring $kind completion for $uuid while waiting for $current")
             return
         }
         advance()
+    }
+
+    /**
+     * A read finished (value null = failed). Returns true when it belonged to a read with its
+     * own result handler, which has now had it, so the caller should not handle it again.
+     * Call before [onOperationComplete].
+     */
+    fun deliverRead(uuid: UUID, value: ByteArray?): Boolean {
+        val read = inFlight as? Op.ReadCharacteristic ?: return false
+        if (read.uuid != uuid) return false
+        val handler = read.onResult ?: return false
+        handler(value)
+        return true
     }
 
     private fun advance() {
@@ -109,11 +139,13 @@ class GattOperationQueue(
                 timeoutJob = scope.launch {
                     delay(OPERATION_TIMEOUT_MS)
                     Log.w(TAG, "Timed out waiting for $op")
+                    (op as? Op.ReadCharacteristic)?.onResult?.invoke(null)
                     advance()
                 }
                 return
             }
             Log.w(TAG, "Failed to start $op, skipping")
+            (op as? Op.ReadCharacteristic)?.onResult?.invoke(null)
         }
     }
 }

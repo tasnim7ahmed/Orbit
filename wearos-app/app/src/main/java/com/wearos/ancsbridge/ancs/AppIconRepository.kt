@@ -11,12 +11,13 @@ import android.graphics.RectF
 import android.util.Log
 import android.util.LruCache
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
+import androidx.core.graphics.createBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.wearos.ancsbridge.net.Http
 import org.json.JSONObject
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
 import java.net.URLEncoder
 import java.util.Locale
 
@@ -38,7 +39,6 @@ object AppIconRepository {
     private const val ICON_SIZE_PX = 144
     private const val PREFS = "app_icons"
     private const val RETRY_AFTER_MISS_MS = 3L * 24 * 60 * 60 * 1000 // 3 days
-    private const val TIMEOUT_MS = 5_000
 
     private val memory = LruCache<String, Bitmap>(40)
     // Touched from the service and from complication/tile coroutines
@@ -108,8 +108,7 @@ object AppIconRepository {
                         ?.let { lookupArtworkUrl(bundleId, it) }
                 if (artworkUrl == null) {
                     Log.i(TAG, "No App Store listing for $bundleId")
-                    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                        .putLong("miss_$bundleId", System.currentTimeMillis()).apply()
+                    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putLong("miss_$bundleId", System.currentTimeMillis()) }
                     return@withContext null
                 }
                 val raw = download(artworkUrl) ?: return@withContext null
@@ -138,7 +137,7 @@ object AppIconRepository {
 
         val color = (appleAppColors[bundleId] ?: categoryColors[categoryId] ?: 0xFF8E8E93).toInt()
         val size = ICON_SIZE_PX
-        val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val out = createBitmap(size, size)
         val canvas = Canvas(out)
         canvas.drawPath(roundedSquarePath(size), Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color })
 
@@ -156,7 +155,7 @@ object AppIconRepository {
     private fun lookupArtworkUrl(bundleId: String, country: String?): String? {
         val query = "bundleId=" + URLEncoder.encode(bundleId, "UTF-8") +
             (country?.let { "&country=" + it.lowercase(Locale.US) } ?: "")
-        val body = httpGet("https://itunes.apple.com/lookup?$query")?.toString(Charsets.UTF_8) ?: return null
+        val body = Http.get("https://itunes.apple.com/lookup?$query")?.toString(Charsets.UTF_8) ?: return null
         val results = JSONObject(body).optJSONArray("results") ?: return null
         if (results.length() == 0) return null
         val app = results.getJSONObject(0)
@@ -166,18 +165,7 @@ object AppIconRepository {
     }
 
     private fun download(url: String): Bitmap? =
-        httpGet(url)?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
-
-    private fun httpGet(url: String): ByteArray? {
-        val conn = URL(url).openConnection() as HttpURLConnection
-        return try {
-            conn.connectTimeout = TIMEOUT_MS
-            conn.readTimeout = TIMEOUT_MS
-            if (conn.responseCode != HttpURLConnection.HTTP_OK) null else conn.inputStream.use { it.readBytes() }
-        } finally {
-            conn.disconnect()
-        }
-    }
+        Http.get(url)?.let { Http.decodeBitmap(it, ICON_SIZE_PX) }
 
     /**
      * Square App Store artwork → iOS-style rounded square, inset so it survives the
@@ -185,7 +173,7 @@ object AppIconRepository {
      */
     private fun roundedIcon(src: Bitmap): Bitmap {
         val size = ICON_SIZE_PX
-        val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val out = createBitmap(size, size)
         val canvas = Canvas(out)
         val path = roundedSquarePath(size)
         canvas.clipPath(path)

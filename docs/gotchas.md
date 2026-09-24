@@ -75,3 +75,9 @@
 37. **Wear OS drops wireless debugging when it sleeps**, and hands out a new port each time. For a test session keep the watch on its charger, or expect to rediscover it with `adb mdns services` constantly.
 
 38. **The notification header always shows the posting app's name**: it reads "Orbit", not "WhatsApp", and the only override is the `android.substName` extra, gated behind `SUBSTITUTE_NOTIFICATION_APP_NAME` (`signature|privileged`). Tested on the watch: the extra is stripped from the posted notification and the header stays "Orbit". The iPhone app is identified instead by its real icon as the large icon, with Orbit's own icon as the small badge, plus its name in `setSubText`.
+
+39. **AMS does not replay current values when you subscribe**: iOS sends an Entity Update attribute only when it changes. After a reconnect mid-song only PlaybackInfo arrives (the position ticks); the player name never comes and the title waits for the next track. Keying "a player exists" on the name alone hid the next track's updates too. A valid PlaybackInfo now counts as a player, and every attribute is read once on connect through Entity Attribute (absent ones answer ATT error 0xA2).
+
+40. **A late Data Source response can cost the next notification**: after a 6 s timeout the next request goes out, and the old response's leftover bytes used to reset the assembler, which then dropped the new response as unsolicited. The assembler now remembers what it asked for and discards anything else without resetting.
+
+41. **The newest AndroidX releases need AGP 9.1 and compileSdk 37**: core 1.19, Compose 1.12 (BOM 2026.08+) and Wear Compose 1.7 fail the AAR metadata check on AGP 8.13. The project stays on core 1.17, BOM 2026.06.01 and Wear Compose 1.6.2 until the toolchain is migrated.

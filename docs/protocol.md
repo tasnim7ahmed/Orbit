@@ -22,7 +22,7 @@ All require the bond. Battery/CTS/AMS are started by `PhoneServices` once the AN
 
 **Subscribe to Data Source BEFORE Notification Source** (Apple requirement).
 
-Data Source responses are matched **by attribute ID, not position**: iOS 27 interleaves extra tuples (`0xFF` len 0, repeated AppIdentifier) after action labels. Category **12** (undocumented) = call in progress, negative action "End Call".
+`DataSourceAssembler` only accepts the response it asked for (command, UID or app ID): bytes that don't start it are discarded while it keeps waiting, so a late answer to a timed-out request can neither stand in for nor wipe out the awaited one. Data Source responses are matched **by attribute ID, not position**: iOS 27 interleaves extra tuples (`0xFF` len 0, repeated AppIdentifier) after action labels. Category **12** (undocumented) = call in progress, negative action "End Call".
 
 ## Pairing (no iPhone app)
 
@@ -30,6 +30,7 @@ Data Source responses are matched **by attribute ID, not position**: iOS 27 inte
 2. iPhone **Settings → Bluetooth** lists the watch → user taps it → iPhone connects as central
 3. `BluetoothGattServerCallback.onConnectionStateChange` → `connectGatt()` on the existing link
 4. Outside the pairing window, inbound links are accepted only from the remembered iPhone
+5. The Pair screen closes once a pairing completes: only after the link went down or through setup since it opened, so it also works for pairing another iPhone while one is connected
 
 ## Connection Flow
 
@@ -75,8 +76,10 @@ Data Source responses are matched **by attribute ID, not position**: iOS 27 inte
 ### Stacks, quiet delivery, per-app settings
 
 - **Stack by app** (default on): group `app_{bundleId}` + our own summary (quiet channel, ID `2_000_000 + hash`), children `GROUP_ALERT_CHILDREN`. Off: unique group per notification (`ancs_{uid}`). Summary is removed with its last child; dismissing it clears the whole stack on the iPhone
-- **Quiet**: ANCS Silent flag (iPhone Focus / Deliver Quietly), per-app Quiet, or recovered backlog → `CHANNEL_QUIET`
+- **Quiet**: ANCS Silent flag (iPhone Focus / Deliver Quietly), per-app Quiet, an app muted for an hour, the watch off the wrist, or recovered backlog → `CHANNEL_QUIET`
 - **Per-app** (`AppSettings`, SharedPreferences JSON): Alert / Quiet / Off + haptic Default / Tap / Double / Long (Tap/Double/Long map to dedicated haptic channels)
+- **Mute 1 hr**: a watch-only notification action (like Apple Watch's "Mute for 1 hour"), handled in `NotificationActionReceiver` without the service. It stores `mutedUntil` on the app's entry; until then the app's notifications post quietly and without the action. In Settings the app reads "Muted until 14:05", and its first tap unmutes
+- **Off wrist** (`WristDetector`, toggle "Off wrist", default on): the wake-up `TYPE_LOW_LATENCY_OFFBODY_DETECT` sensor (no permission; on-change, so it only wakes the watch when it is put on or taken off, and it reports its state when enabled). Off the wrist, notifications post quietly, calls don't start the `Ringer` (taking the watch off mid-ring stops it; the call screen stays) and the left-behind alert is skipped. Unknown counts as worn, so a missing sensor never silences anything
 
 ### App icons
 
@@ -108,7 +111,7 @@ Versioned (`_v7`); bump in `AncsApplication.kt` to change settings.
 ### Call state after answering
 
 1. **ANCS MODIFIED** for the active call → "Active on iPhone" (auto-dismiss 5 s); a MODIFIED call never re-rings
-2. **Category 12** → silent ongoing notification with **End Call** (negative action)
+2. **Category 12** → silent ongoing notification with **End Call** (negative action) and a running call timer (`setUsesChronometer`), made a Wear **Ongoing Activity**: a phone icon on the watch face, like Apple Watch's green call indicator. Its status is "caller · stopwatch". Tapping it (or the notification) opens `IncomingCallActivity` in its in-call mode (`inCallIntent`): caller, running time, End Call, no auto-dismiss. The call is tracked in `ongoingCall`; REMOVED, End Call from the watch and link loss all cancel it and close the in-call screen. A call re-announced after a reconnect starts its timer at its ANCS date (capped at 12 h), otherwise at the moment it arrived
 3. **Safety timeout**: 45 s
 
 ## Apple Media Service (Now Playing)
@@ -117,7 +120,10 @@ Versioned (`_v7`); bump in `AncsApplication.kt` to change settings.
 - All 14 remote commands are wired: play 0, pause 1, toggle 2, next 3, previous 4, volume up 5, volume down 6, advance repeat 7, advance shuffle 8, skip forward 9, skip backward 10, like 11, dislike 12, bookmark 13. Transport buttons are shown optimistically; the rest appear only when the supported-command list names them, so Spotify shows skip forward and back (9, 10) and hides shuffle, repeat and ratings
 - Queue attributes arrive as text, and shuffle/repeat use 0 off, 1 one, 2 all. Spotify reports the modes but not index or count, so the "3 of 21" line only shows for players that send them
 - `MediaScreen`: track, progress, transport, the supported extras, volume row, crown = iPhone volume (`onRotaryScrollEvent`, 48 px per step). Scrolls by swipe, since the crown is taken
-- `NowPlayingController`: ongoing notification + Wear Ongoing Activity while a track is loaded (hidden after 10 min paused); auto-opens Now Playing when playback starts (not in the first 8 s of a session, 60 s cooldown, toggle in Settings)
+- iOS sends an attribute only when it changes; subscribing does not replay current values. So on connect every subscribed attribute is also read once through **Entity Attribute** `C6B2F38C-23AB-46D8-A6AB-A3A870BBD5D7` (write `[entity, attribute]`, then read the value), which brings a song already playing straight in. An absent attribute answers ATT error `0xA2` (nothing playing; Spotify for queue index/count) and is skipped. Each read carries its own result handler through `GattOperationQueue`, whose completions match UUID and kind, since the write and read share one characteristic. A valid PlaybackInfo also marks a player as available (the name may be missing)
+- `NowPlayingController`: ongoing notification + Wear Ongoing Activity while a track is loaded (hidden after 10 min paused); auto-opens Now Playing when playback starts (not in the first 8 s of a session, not within 5 s of a media command from the watch, 60 s cooldown, toggle in Settings)
+- **Media session** (`MediaSessionCompat` "Orbit iPhone", `androidx.media`): the notification is `MediaStyle` with the session token, so the watch's own media controls (`com.google.android.wearable.media.sessions`, which listens for media notifications) show and drive the iPhone's player. Transport callbacks send AMS commands (fast-forward/rewind = skip forward/back, only when the player lists them); volume is a remote, relative `VolumeProviderCompat` (0–100 from the AMS volume) whose steps send volume up/down. Playback state uses AMS's elapsed time and the `elapsedRealtime` it arrived at. Metadata (with the cover) is only re-sent when it changes. The session goes inactive when Now Playing hides
+- **Album art** (`ArtworkRepository`, `ArtworkMatcher`, Settings switch "Album art", default on; off means no lookups at all and the cover is cleared): AMS carries no artwork, so the track is looked up on Apple's public search API (`itunes.apple.com/search`, `entity=song`, "artist title"). A result is used only when the normalized title and the lead artist both match (album breaks ties between versions); otherwise the show is tried as a podcast (`entity=podcast`, exact show name from album or artist). 300 px covers are cached in `cacheDir/artwork` (40 most recent) per artist + album, so every track of an album shares one lookup. A track with no match is remembered in the `artwork_misses` prefs (hashed, 3 days, at most 200); a failed request is not a miss and is retried. Downloads are capped at 2 MB and decoded no larger than needed (`Http`). The cover is `PhoneStatus.artwork`, tagged with its track: drawn dimmed behind `MediaScreen`, in the tile, as the notification large icon and as the session's album art
 
 ## Battery & Clock
 
@@ -127,12 +133,12 @@ Versioned (`_v7`); bump in `AncsApplication.kt` to change settings.
 ## Watch Surfaces
 
 - **Complications**: "iPhone Battery" (RANGED_VALUE, SHORT_TEXT; "—" when disconnected), "iPhone Now Playing" (SHORT_TEXT, LONG_TEXT). Push-only (`UPDATE_PERIOD_SECONDS=0`)
-- **Tile** "iPhone": link status + battery, current track, Play/Pause (LoadAction handled in `onTileRequest`)
-- `SurfaceUpdater.requestAll()` on battery / link / media changes (coalesced 0.5 s)
+- **Tile** "iPhone": link status + battery, current track (with its cover when found, an inline image resource whose version carries the track), Play/Pause (LoadAction handled in `onTileRequest`)
+- `SurfaceUpdater.request(what)` on battery (`BATTERY`), media (`MEDIA`) and link (`ALL`) changes, coalesced 0.5 s: only the complication that shows the change is refreshed; the tile always is
 
 ## Left-behind Alert
 
-Unexpected disconnect → after 15 s still down → "iPhone disconnected" on `connection` channel. A partial wakelock covers the 15 s (coroutine delays pause while the CPU sleeps). Cleared on reconnect; user "Disconnect" doesn't trigger it.
+Unexpected disconnect → after 15 s still down → "iPhone disconnected" on `connection` channel. A partial wakelock covers the 15 s (coroutine delays pause while the CPU sleeps). Cleared on reconnect; user "Disconnect" doesn't trigger it, and neither does a watch that is off the wrist.
 
 ## Interface
 

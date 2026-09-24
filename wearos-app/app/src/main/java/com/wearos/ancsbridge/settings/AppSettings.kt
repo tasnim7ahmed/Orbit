@@ -2,6 +2,7 @@ package com.wearos.ancsbridge.settings
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,8 +40,12 @@ object AppSettings {
         val name: String,
         val lastSeen: Long,
         val mode: AlertMode = AlertMode.ALERT,
-        val haptic: Haptic = Haptic.DEFAULT
-    )
+        val haptic: Haptic = Haptic.DEFAULT,
+        /** Delivered quietly until this time (System.currentTimeMillis()); 0 = not muted. */
+        val mutedUntil: Long = 0L
+    ) {
+        fun isMuted(now: Long = System.currentTimeMillis()) = mutedUntil > now
+    }
 
     private lateinit var prefs: SharedPreferences
 
@@ -55,7 +60,11 @@ object AppSettings {
         val stackByApp: Boolean = true,
         val autoLaunchNowPlaying: Boolean = true,
         val leftBehindAlert: Boolean = true,
-        val showMissedWhileAway: Boolean = true
+        val showMissedWhileAway: Boolean = true,
+        /** No buzzing while the watch is off the wrist, like an Apple Watch. */
+        val quietOffWrist: Boolean = true,
+        /** Look up album art online. Sends the song's title and artist to Apple's search API. */
+        val albumArt: Boolean = true
     )
 
     fun init(context: Context) {
@@ -66,7 +75,9 @@ object AppSettings {
             stackByApp = prefs.getBoolean("stack_by_app", true),
             autoLaunchNowPlaying = prefs.getBoolean("auto_launch_now_playing", true),
             leftBehindAlert = prefs.getBoolean("left_behind_alert", true),
-            showMissedWhileAway = prefs.getBoolean("show_missed", true)
+            showMissedWhileAway = prefs.getBoolean("show_missed", true),
+            quietOffWrist = prefs.getBoolean("quiet_off_wrist", true),
+            albumArt = prefs.getBoolean("album_art", true)
         )
     }
 
@@ -92,14 +103,35 @@ object AppSettings {
 
     fun setHaptic(bundleId: String, haptic: Haptic) = update(bundleId) { it.copy(haptic = haptic) }
 
+    /**
+     * Apple Watch's "Mute for 1 hour": the app's notifications still arrive, quietly, until
+     * [durationMs] from now. An app not in the list yet (trimmed) is added.
+     */
+    fun muteFor(bundleId: String, name: String, durationMs: Long) {
+        if (bundleId.isEmpty()) return
+        val until = System.currentTimeMillis() + durationMs
+        if (entryFor(bundleId) == null) {
+            save(listOf(AppEntry(bundleId, name, System.currentTimeMillis(), mutedUntil = until)) + _apps.value)
+        } else {
+            update(bundleId) { it.copy(mutedUntil = until) }
+        }
+    }
+
+    fun unmute(bundleId: String) = update(bundleId) { it.copy(mutedUntil = 0L) }
+
+    /** Drop an app from the list (test hook: removes apps that only fake notifications created). */
+    fun forget(bundleId: String) = save(_apps.value.filter { it.bundleId != bundleId })
+
     fun setToggles(toggles: Toggles) {
         _toggles.value = toggles
-        prefs.edit()
-            .putBoolean("stack_by_app", toggles.stackByApp)
-            .putBoolean("auto_launch_now_playing", toggles.autoLaunchNowPlaying)
-            .putBoolean("left_behind_alert", toggles.leftBehindAlert)
-            .putBoolean("show_missed", toggles.showMissedWhileAway)
-            .apply()
+        prefs.edit {
+            putBoolean("stack_by_app", toggles.stackByApp)
+            putBoolean("auto_launch_now_playing", toggles.autoLaunchNowPlaying)
+            putBoolean("left_behind_alert", toggles.leftBehindAlert)
+            putBoolean("show_missed", toggles.showMissedWhileAway)
+            putBoolean("quiet_off_wrist", toggles.quietOffWrist)
+            putBoolean("album_art", toggles.albumArt)
+        }
     }
 
     private fun update(bundleId: String, transform: (AppEntry) -> AppEntry) {
@@ -115,9 +147,10 @@ object AppSettings {
                 .put("name", app.name)
                 .put("lastSeen", app.lastSeen)
                 .put("mode", app.mode.name)
-                .put("haptic", app.haptic.name))
+                .put("haptic", app.haptic.name)
+                .put("mutedUntil", app.mutedUntil))
         }
-        prefs.edit().putString(KEY_APPS, json.toString()).apply()
+        prefs.edit { putString(KEY_APPS, json.toString()) }
     }
 
     private fun loadApps(): List<AppEntry> {
@@ -131,7 +164,8 @@ object AppSettings {
                     name = o.optString("name", id),
                     lastSeen = o.optLong("lastSeen"),
                     mode = runCatching { AlertMode.valueOf(o.optString("mode")) }.getOrDefault(AlertMode.ALERT),
-                    haptic = runCatching { Haptic.valueOf(o.optString("haptic")) }.getOrDefault(Haptic.DEFAULT)
+                    haptic = runCatching { Haptic.valueOf(o.optString("haptic")) }.getOrDefault(Haptic.DEFAULT),
+                    mutedUntil = o.optLong("mutedUntil")
                 )
             }.sortedByDescending { it.lastSeen }.toList()
         } catch (_: Exception) {

@@ -8,6 +8,7 @@ import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import com.wearos.ancsbridge.ancs.AncsService
 import com.wearos.ancsbridge.ble.BleConnectionManager
+import com.wearos.ancsbridge.model.Artwork
 import com.wearos.ancsbridge.model.ClockStatus
 import com.wearos.ancsbridge.model.ConnectionState
 import com.wearos.ancsbridge.model.MediaState
@@ -31,6 +32,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val iphoneBattery: StateFlow<Int?> = PhoneStatus.battery
     val media: StateFlow<MediaState> = PhoneStatus.media
     val clock: StateFlow<ClockStatus?> = PhoneStatus.clock
+    val artwork: StateFlow<Artwork?> = PhoneStatus.artwork
 
     // Watch-side notification settings
     val toggles: StateFlow<AppSettings.Toggles> = AppSettings.toggles
@@ -39,6 +41,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setToggles(toggles: AppSettings.Toggles) = AppSettings.setToggles(toggles)
     fun setAppMode(bundleId: String, mode: AppSettings.AlertMode) = AppSettings.setMode(bundleId, mode)
     fun setAppHaptic(bundleId: String, haptic: AppSettings.Haptic) = AppSettings.setHaptic(bundleId, haptic)
+    fun unmuteApp(bundleId: String) = AppSettings.unmute(bundleId)
 
     /** Send an Apple Media Service command (AmsProtocol.CMD_*) to the iPhone's player. */
     fun sendMediaCommand(command: Int) {

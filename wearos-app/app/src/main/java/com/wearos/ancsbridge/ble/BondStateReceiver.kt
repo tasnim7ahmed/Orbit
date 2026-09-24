@@ -33,12 +33,14 @@ class BondStateReceiver(
 
         when (bondState) {
             BluetoothDevice.BOND_BONDED -> {
-                Log.i(TAG, "Device bonded: ${device.address}")
+                Log.i(TAG, "A device bonded")
+                Log.d(TAG, "Bonded: ${device.address}")
                 onBonded(device)
             }
             BluetoothDevice.BOND_NONE -> {
                 if (prevState == BluetoothDevice.BOND_BONDING) {
-                    Log.w(TAG, "Bond failed for: ${device.address}")
+                    Log.w(TAG, "A bond attempt failed")
+                    Log.d(TAG, "Bond failed: ${device.address}")
                     onBondFailed(device)
                 }
             }

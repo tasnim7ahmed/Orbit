@@ -1,11 +1,13 @@
 package com.wearos.ancsbridge.ui
 
+import android.annotation.SuppressLint
 import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -21,6 +23,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -41,6 +47,8 @@ import com.wearos.ancsbridge.ancs.AncsService
 import com.wearos.ancsbridge.ancs.NotificationActionReceiver
 import com.wearos.ancsbridge.ble.AncsConstants
 import com.wearos.ancsbridge.ui.theme.AncsBridgeTheme
+import kotlinx.coroutines.delay
+import java.util.Locale
 
 /**
  * Full-screen incoming call activity shown when ANCS reports an incoming call.
@@ -57,6 +65,23 @@ class IncomingCallActivity : ComponentActivity() {
         const val ACTION_CALL_ENDED = "com.wearos.ancsbridge.CALL_ENDED"
         const val ACTION_CALL_ANSWERED = "com.wearos.ancsbridge.CALL_ANSWERED"
         const val ACTION_CALLER_NAME_UPDATED = "com.wearos.ancsbridge.CALLER_NAME_UPDATED"
+        /** Opened from the call-in-progress indicator: show the call, not the ringing screen. */
+        private const val EXTRA_IN_CALL_SINCE = "in_call_since"
+        private const val EXTRA_END_LABEL = "end_label"
+
+        /**
+         * The call in progress on the iPhone, with its running time and End Call.
+         * [startedElapsed] is in the SystemClock.elapsedRealtime() base.
+         */
+        // Started from the service's PendingIntent, outside any task: NEW_TASK is required
+        @SuppressLint("WearRecents")
+        fun inCallIntent(context: Context, uid: Long, callerName: String, startedElapsed: Long, endLabel: String?): Intent =
+            Intent(context, IncomingCallActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(EXTRA_NOTIFICATION_UID, uid)
+                .putExtra(EXTRA_CALLER_NAME, callerName)
+                .putExtra(EXTRA_IN_CALL_SINCE, startedElapsed)
+                .putExtra(EXTRA_END_LABEL, endLabel)
 
         /** Auto-dismiss after this many ms if no ANCS event arrives */
         private const val AUTO_DISMISS_TIMEOUT_MS = 45_000L
@@ -68,17 +93,24 @@ class IncomingCallActivity : ComponentActivity() {
     private var callerNameState = mutableStateOf("Unknown Caller")
     /** true = call was answered on iPhone, show "Active on iPhone" UI */
     private var callAnsweredOnPhone = mutableStateOf(false)
+    /** Set when opened from the call indicator: elapsedRealtime the call began, and its End label. */
+    private var inCallSince = mutableStateOf<Long?>(null)
+    private var endLabel: String? = null
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 
     private val callEndedReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
-                ACTION_CALL_ENDED -> finish()
+                // A call ID, when given, must be this screen's: another call ending leaves it open
+                ACTION_CALL_ENDED -> {
+                    val endedUid = intent.getLongExtra(EXTRA_NOTIFICATION_UID, -1)
+                    if (endedUid == -1L || endedUid == notificationUid) finish()
+                }
                 ACTION_CALL_ANSWERED -> {
                     // Call was answered on iPhone — transition to "active call" UI
                     callAnsweredOnPhone.value = true
-                    // Auto-dismiss after a few seconds
-                    handler.postDelayed({ finish() }, ACTIVE_CALL_DISMISS_MS)
+                    // Auto-dismiss after a few seconds (not when the user opened the call on purpose)
+                    if (inCallSince.value == null) handler.postDelayed({ finish() }, ACTIVE_CALL_DISMISS_MS)
                 }
                 ACTION_CALLER_NAME_UPDATED -> {
                     val name = intent.getStringExtra(EXTRA_CALLER_NAME)
@@ -107,6 +139,7 @@ class IncomingCallActivity : ComponentActivity() {
         callerNameState.value = intent.getStringExtra(EXTRA_CALLER_NAME) ?: "Unknown Caller"
         val appName = intent.getStringExtra(EXTRA_APP_NAME) ?: "Phone"
         notificationUid = intent.getLongExtra(EXTRA_NOTIFICATION_UID, -1)
+        applyInCall(intent)
 
         val filter = IntentFilter().apply {
             addAction(ACTION_CALL_ENDED)
@@ -115,15 +148,27 @@ class IncomingCallActivity : ComponentActivity() {
         }
         registerReceiver(callEndedReceiver, filter, RECEIVER_NOT_EXPORTED)
 
-        // Safety timeout: auto-dismiss if no ANCS REMOVE/MODIFIED arrives
-        handler.postDelayed({ finish() }, AUTO_DISMISS_TIMEOUT_MS)
+        // Safety timeout for a ringing call: auto-dismiss if no ANCS REMOVE/MODIFIED arrives
+        if (inCallSince.value == null) handler.postDelayed({ finish() }, AUTO_DISMISS_TIMEOUT_MS)
 
         setContent {
             AncsBridgeTheme {
                 val callerName by callerNameState
                 val answeredOnPhone by callAnsweredOnPhone
 
-                if (answeredOnPhone) {
+                val since by inCallSince
+                if (since != null) {
+                    CallActiveOnPhoneScreen(
+                        callerName = callerName,
+                        startedElapsed = since,
+                        endLabel = endLabel ?: "End Call",
+                        onEndCall = {
+                            performAction(AncsConstants.ACTION_NEGATIVE)
+                            finish()
+                        },
+                        onDismiss = { finish() }
+                    )
+                } else if (answeredOnPhone) {
                     CallActiveOnPhoneScreen(
                         callerName = callerName,
                         onDismiss = { finish() }
@@ -144,6 +189,25 @@ class IncomingCallActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    // singleInstance: tapping the call indicator while this screen exists lands here
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.hasExtra(EXTRA_IN_CALL_SINCE)) {
+            setIntent(intent)
+            notificationUid = intent.getLongExtra(EXTRA_NOTIFICATION_UID, notificationUid)
+            intent.getStringExtra(EXTRA_CALLER_NAME)?.let { callerNameState.value = it }
+            // Opened on purpose: cancel the ringing screen's auto-dismiss timers
+            handler.removeCallbacksAndMessages(null)
+            applyInCall(intent)
+        }
+    }
+
+    private fun applyInCall(intent: Intent) {
+        if (!intent.hasExtra(EXTRA_IN_CALL_SINCE)) return
+        inCallSince.value = intent.getLongExtra(EXTRA_IN_CALL_SINCE, SystemClock.elapsedRealtime())
+        endLabel = intent.getStringExtra(EXTRA_END_LABEL)
     }
 
     /**
@@ -233,7 +297,7 @@ fun IncomingCallScreen(
                 )
             ) {
                 Icon(
-                    painter = painterResource(id = R.drawable.ic_call_decline),
+                    painter = painterResource(id = R.drawable.ic_orbit_call_decline),
                     contentDescription = "Decline",
                     modifier = Modifier.size(24.dp)
                 )
@@ -250,7 +314,7 @@ fun IncomingCallScreen(
                 )
             ) {
                 Icon(
-                    painter = painterResource(id = R.drawable.ic_call_answer),
+                    painter = painterResource(id = R.drawable.ic_orbit_call_answer),
                     contentDescription = "Answer",
                     modifier = Modifier.size(24.dp)
                 )
@@ -259,11 +323,27 @@ fun IncomingCallScreen(
     }
 }
 
+/**
+ * A call that is live on the iPhone. With [startedElapsed] it is the in-call screen
+ * (running time, [onEndCall]); without, the brief "answered on iPhone" confirmation.
+ */
 @Composable
 fun CallActiveOnPhoneScreen(
     callerName: String,
+    startedElapsed: Long? = null,
+    endLabel: String = "End Call",
+    onEndCall: (() -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
+    var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
+    if (startedElapsed != null) {
+        LaunchedEffect(startedElapsed) {
+            while (true) {
+                now = SystemClock.elapsedRealtime()
+                delay(1000)
+            }
+        }
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -272,7 +352,7 @@ fun CallActiveOnPhoneScreen(
         verticalArrangement = Arrangement.Center
     ) {
         Icon(
-            painter = painterResource(id = R.drawable.ic_call_answer),
+            painter = painterResource(id = R.drawable.ic_orbit_call_answer),
             contentDescription = null,
             modifier = Modifier.size(28.dp),
             tint = MaterialTheme.colorScheme.tertiary
@@ -292,7 +372,7 @@ fun CallActiveOnPhoneScreen(
         Spacer(modifier = Modifier.height(2.dp))
 
         Text(
-            "Active on iPhone",
+            if (startedElapsed != null) "On iPhone · ${formatCallTime(now - startedElapsed)}" else "Active on iPhone",
             style = MaterialTheme.typography.bodyExtraSmall,
             color = MaterialTheme.colorScheme.tertiary,
             textAlign = TextAlign.Center
@@ -300,11 +380,33 @@ fun CallActiveOnPhoneScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Button(
-            onClick = onDismiss,
-            modifier = Modifier.fillMaxWidth(0.7f),
-            colors = ButtonDefaults.filledTonalButtonColors(),
-            label = { Text("Dismiss") }
-        )
+        if (onEndCall != null) {
+            Button(
+                onClick = onEndCall,
+                modifier = Modifier.fillMaxWidth(0.7f),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer
+                ),
+                label = { Text(endLabel, maxLines = 1, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()) }
+            )
+        } else {
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(0.7f),
+                colors = ButtonDefaults.filledTonalButtonColors(),
+                label = { Text("Dismiss") }
+            )
+        }
     }
+}
+
+/** "4:07", or "1:02:33" past an hour. */
+private fun formatCallTime(ms: Long): String {
+    val total = (ms / 1000).coerceAtLeast(0)
+    val h = total / 3600
+    val m = (total % 3600) / 60
+    val sec = total % 60
+    return if (h > 0) String.format(Locale.getDefault(), "%d:%02d:%02d", h, m, sec)
+    else String.format(Locale.getDefault(), "%d:%02d", m, sec)
 }

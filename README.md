@@ -39,15 +39,18 @@ Based on [WearBridge](https://github.com/k97/WearBridge) by Karthik Rajendran (M
 - Notifications are grouped by app.
 - Quiet notifications on the iPhone (Focus, Deliver Quietly) stay quiet on the watch.
 - Notifications that arrived while the watch was away show up quietly when it reconnects.
+- No buzzing while the watch is off your wrist (on its charger, on the table), like an Apple Watch. The iPhone still alerts as usual. You can turn this off.
 
 **Per-app settings**
 - Set each iPhone app to Alert, Quiet or Off.
 - Pick a vibration style per app: Default, Tap, Double or Long.
+- "Mute 1 hr" on any notification: that app's notifications arrive quietly for an hour. Settings shows "Muted until …", and one tap there unmutes it.
 
 **Calls**
 - A full-screen call screen with the caller's name, even on the lock screen.
-- The watch keeps vibrating until you answer, decline or press the side button.
+- The watch keeps vibrating until you answer, decline or press the side button. It doesn't vibrate while the watch is off your wrist.
 - Answer and Decline work on the iPhone. End Call works during a call.
+- During a call a phone icon sits on the watch face. Tap it for the call, its running time and End Call.
 - WhatsApp and FaceTime calls work too.
 
 **Music**
@@ -55,20 +58,32 @@ Based on [WearBridge](https://github.com/k97/WearBridge) by Karthik Rajendran (M
 - Skip forward and back inside a track, for podcasts, plus shuffle, repeat, like and dislike. Each button shows only when the player supports it.
 - Shows the track's place in the queue, like "3 of 21", for players that report it.
 - Turn the crown to change the iPhone volume.
-- The music screen opens by itself when playback starts.
+- Album art behind the controls, in the tile and in the notification, found by the song's name. This sends the song's title and artist to Apple's public search; turn "Album art" off in Settings to stop it.
+- A song that is already playing shows up as soon as the watch reconnects.
+- The watch's own media controls work too, including its media screen and volume.
+- The music screen opens by itself when playback starts on the iPhone.
 
 **iPhone status**
 - iPhone battery level on the home screen, a tile and a watch face complication.
 - A clock check that tells you if the watch time differs from the iPhone.
 
 **Watch face**
-- An "iPhone" tile with connection, battery and music controls.
+- An "iPhone" tile with connection, battery, the song with its album art, and a play/pause button.
 - "iPhone Battery" and "iPhone Now Playing" complications.
+- A music icon while something plays, and a phone icon during a call.
 
 **Looks like the rest of the watch**
 - Built with Material 3 for Wear OS, so it matches the system apps.
 - Takes its colours from your watch face when the watch offers a theme.
 - The clock stays on screen, lists scroll the way Wear OS lists do, and each screen has one main action on the bottom edge.
+
+## Privacy
+
+Everything stays between the watch and the iPhone, with two exceptions, both to Apple's public App Store search (no account, over HTTPS):
+- **App icons**: the app's bundle ID (like `net.whatsapp.WhatsApp`), once per app.
+- **Album art**: the song's title and artist, or the podcast's name, once per album. Turn "Album art" off in Settings to stop it.
+
+Nothing is backed up or sent anywhere else, and release builds keep message text, caller names and Bluetooth addresses out of the watch's logs.
 
 ## Limitations
 
@@ -111,6 +126,7 @@ Expect about **3 to 6% less battery per day** on the watch.
 - On a Pixel Watch 3, Orbit used about 1.8% of all app CPU time during a day of heavy testing. It sleeps between notifications.
 - Keeping the Bluetooth link open adds about 2 to 4% per day. This part is an estimate, because Wear OS doesn't track Bluetooth use per app.
 - If the watch is still paired with an Android phone that stays nearby, that link uses extra battery. Turning that phone's Bluetooth off saves it.
+- Album art needs the internet, which on a watch without a phone means Wi-Fi, the watch's biggest battery cost. Covers are looked up once per album and kept, and songs with no match aren't asked about again for three days. Turn "Album art" off to avoid it entirely.
 
 ## Install
 
@@ -155,7 +171,7 @@ That's it. Notifications start right away.
 
 If the watch doesn't show up in Settings > Bluetooth, connect to it once with a Bluetooth scanner app like nRF Connect. The watch will then ask to pair.
 
-You can also add the **iPhone** tile and the complications from the watch face editor. App settings are under **Settings** in Orbit, which is also where you pair another iPhone later.
+You can also add the **iPhone** tile and the complications from the watch face editor. App settings are under **Settings** in Orbit, which is also where you pair another iPhone later, even while one is connected.
 
 ## Project Structure
 

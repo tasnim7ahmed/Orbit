@@ -26,7 +26,8 @@ class AncsCallConnection(
 
     init {
         connectionProperties = PROPERTY_SELF_MANAGED
-        connectionCapabilities = CAPABILITY_SUPPORT_HOLD or CAPABILITY_HOLD
+        // No hold: the call lives on the iPhone, and ANCS has no way to hold it
+        connectionCapabilities = 0
     }
 
     override fun onAnswer() {

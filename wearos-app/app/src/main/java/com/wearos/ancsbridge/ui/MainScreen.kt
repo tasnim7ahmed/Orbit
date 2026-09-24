@@ -1,6 +1,7 @@
 package com.wearos.ancsbridge.ui
 
 import android.annotation.SuppressLint
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -194,7 +195,7 @@ fun HomeScreen(
                             },
                             label = {
                                 Text(
-                                    if (media.hasTrack) media.title else "Now Playing",
+                                    if (media.hasTrack) media.displayTitle else "Now Playing",
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -361,11 +362,17 @@ fun PairNewDeviceScreen(viewModel: MainViewModel, onDismiss: () -> Unit) {
     val connectionState by viewModel.connectionState.collectAsState()
     val pairingState by viewModel.pairingState.collectAsState()
     val listState = rememberTransformingLazyColumnState()
+    // Back returns home, like the other screens, instead of closing Orbit
+    BackHandler(onBack = onDismiss)
 
-    // Auto-dismiss when connected
-    if (connectionState is ConnectionState.Connected) {
-        onDismiss()
-        return
+    // Close once a pairing completes: only after the link was down or being set up since
+    // this screen opened. Opened while already connected (pairing another iPhone from
+    // Settings), the existing link must not close it straight away.
+    var sawSetup by remember { mutableStateOf(false) }
+    val connected = connectionState is ConnectionState.Connected
+    LaunchedEffect(connected) {
+        if (!connected) sawSetup = true
+        else if (sawSetup) onDismiss()
     }
 
     val advertising = pairingState as? AncsService.PairingState.Advertising

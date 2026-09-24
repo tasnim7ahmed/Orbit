@@ -2,6 +2,7 @@ package com.wearos.ancsbridge.ui
 
 import android.os.SystemClock
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.rememberScrollState
@@ -47,6 +48,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.text.style.TextAlign
@@ -74,17 +77,8 @@ import java.util.Locale
 @Composable
 fun MediaScreen(viewModel: MainViewModel, onDismiss: () -> Unit) {
     val media by viewModel.media.collectAsState()
+    val artwork by viewModel.artwork.collectAsState()
     BackHandler(onBack = onDismiss)
-
-    // Tick once a second while playing so the progress bar moves
-    var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
-    LaunchedEffect(media.isPlaying) {
-        while (media.isPlaying) {
-            now = SystemClock.elapsedRealtime()
-            delay(1000)
-        }
-        now = SystemClock.elapsedRealtime()
-    }
 
     // Digital Crown / rotating bezel = iPhone volume, like Apple Watch Now Playing
     val focusRequester = remember { FocusRequester() }
@@ -93,114 +87,131 @@ fun MediaScreen(viewModel: MainViewModel, onDismiss: () -> Unit) {
     LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
 
     ScreenScaffold {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .onRotaryScrollEvent { event ->
-                    crownAccumulator += event.verticalScrollPixels
-                    // One volume step per notch-ish of rotation
-                    while (crownAccumulator > CROWN_STEP_PX) {
-                        crownAccumulator -= CROWN_STEP_PX
-                        viewModel.sendMediaCommand(AmsProtocol.CMD_VOLUME_UP)
+        Box(Modifier.fillMaxSize()) {
+            // Album art fills the round screen behind the controls, dimmed so text stays readable
+            artwork?.let { art ->
+                val image = remember(art) { art.bitmap.asImageBitmap() }
+                Image(
+                    bitmap = image,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background.copy(alpha = ART_SCRIM_ALPHA))
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .onRotaryScrollEvent { event ->
+                        crownAccumulator += event.verticalScrollPixels
+                        // One volume step per notch-ish of rotation
+                        while (crownAccumulator > CROWN_STEP_PX) {
+                            crownAccumulator -= CROWN_STEP_PX
+                            viewModel.sendMediaCommand(AmsProtocol.CMD_VOLUME_UP)
+                        }
+                        while (crownAccumulator < -CROWN_STEP_PX) {
+                            crownAccumulator += CROWN_STEP_PX
+                            viewModel.sendMediaCommand(AmsProtocol.CMD_VOLUME_DOWN)
+                        }
+                        true
                     }
-                    while (crownAccumulator < -CROWN_STEP_PX) {
-                        crownAccumulator += CROWN_STEP_PX
-                        viewModel.sendMediaCommand(AmsProtocol.CMD_VOLUME_DOWN)
-                    }
-                    true
-                }
-                .focusRequester(focusRequester)
-                .focusable()
-                // Players that offer extra commands make this taller than the screen;
-                // the crown is taken by volume, so this scrolls by swipe
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 26.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text(
-                if (media.available) media.playerName else "iPhone",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                if (media.hasTrack) media.title.ifEmpty { "Unknown title" } else "Nothing playing",
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center
-            )
-            if (media.artist.isNotEmpty()) {
+                    .focusRequester(focusRequester)
+                    .focusable()
+                    // Players that offer extra commands make this taller than the screen;
+                    // the crown is taken by volume, so this scrolls by swipe
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp, vertical = 26.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
                 Text(
-                    media.artist,
-                    style = MaterialTheme.typography.bodyExtraSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    media.playerName.ifEmpty { "iPhone" },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    if (media.hasTrack) media.title.ifEmpty { "Unknown title" } else "Nothing playing",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center
                 )
-            }
-            media.queuePosition?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline,
-                    textAlign = TextAlign.Center
-                )
-            }
-
-            Spacer(Modifier.height(8.dp))
-            ProgressBar(media, now)
-            Spacer(Modifier.height(10.dp))
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                TransportButton(Icons.Rounded.SkipPrevious, "Previous", media, AmsProtocol.CMD_PREVIOUS_TRACK) {
-                    viewModel.sendMediaCommand(AmsProtocol.CMD_PREVIOUS_TRACK)
-                }
-                FilledIconButton(
-                    onClick = { viewModel.sendMediaCommand(AmsProtocol.CMD_TOGGLE_PLAY_PAUSE) },
-                    enabled = media.available,
-                    modifier = Modifier.size(56.dp)
-                ) {
-                    Icon(
-                        if (media.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        contentDescription = if (media.isPlaying) "Pause" else "Play",
-                        modifier = Modifier.size(30.dp)
+                if (media.artist.isNotEmpty()) {
+                    Text(
+                        media.artist,
+                        style = MaterialTheme.typography.bodyExtraSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center
                     )
                 }
-                TransportButton(Icons.Rounded.SkipNext, "Next", media, AmsProtocol.CMD_NEXT_TRACK) {
-                    viewModel.sendMediaCommand(AmsProtocol.CMD_NEXT_TRACK)
+                media.queuePosition?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        textAlign = TextAlign.Center
+                    )
                 }
-            }
 
-            // Everything below depends on what the current player offers, so these show
-            // for a podcast app and stay hidden for one that cannot do them.
-            ExtraCommandRow(media) { viewModel.sendMediaCommand(it) }
+                Spacer(Modifier.height(8.dp))
+                ProgressBar(media)
+                Spacer(Modifier.height(10.dp))
 
-            Spacer(Modifier.height(6.dp))
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                SmallButton(Icons.Rounded.VolumeDown, "Volume down") {
-                    viewModel.sendMediaCommand(AmsProtocol.CMD_VOLUME_DOWN)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TransportButton(Icons.Rounded.SkipPrevious, "Previous", media, AmsProtocol.CMD_PREVIOUS_TRACK) {
+                        viewModel.sendMediaCommand(AmsProtocol.CMD_PREVIOUS_TRACK)
+                    }
+                    FilledIconButton(
+                        onClick = { viewModel.sendMediaCommand(AmsProtocol.CMD_TOGGLE_PLAY_PAUSE) },
+                        enabled = media.available,
+                        modifier = Modifier.size(56.dp)
+                    ) {
+                        Icon(
+                            if (media.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            contentDescription = if (media.isPlaying) "Pause" else "Play",
+                            modifier = Modifier.size(30.dp)
+                        )
+                    }
+                    TransportButton(Icons.Rounded.SkipNext, "Next", media, AmsProtocol.CMD_NEXT_TRACK) {
+                        viewModel.sendMediaCommand(AmsProtocol.CMD_NEXT_TRACK)
+                    }
                 }
-                Text(
-                    media.volume?.let { "${(it * 100).toInt()}%" } ?: "",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.width(36.dp),
-                    textAlign = TextAlign.Center
-                )
-                SmallButton(Icons.Rounded.VolumeUp, "Volume up") {
-                    viewModel.sendMediaCommand(AmsProtocol.CMD_VOLUME_UP)
+
+                // Everything below depends on what the current player offers, so these show
+                // for a podcast app and stay hidden for one that cannot do them.
+                ExtraCommandRow(media) { viewModel.sendMediaCommand(it) }
+
+                Spacer(Modifier.height(6.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    SmallButton(Icons.Rounded.VolumeDown, "Volume down") {
+                        viewModel.sendMediaCommand(AmsProtocol.CMD_VOLUME_DOWN)
+                    }
+                    Text(
+                        media.volume?.let { "${(it * 100).toInt()}%" } ?: "",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.width(36.dp),
+                        textAlign = TextAlign.Center
+                    )
+                    SmallButton(Icons.Rounded.VolumeUp, "Volume up") {
+                        viewModel.sendMediaCommand(AmsProtocol.CMD_VOLUME_UP)
+                    }
                 }
             }
         }
@@ -300,8 +311,17 @@ private fun SmallButton(
     }
 }
 
+/** Ticks once a second while playing; only this bar recomposes, not the whole screen. */
 @Composable
-private fun ProgressBar(media: MediaState, now: Long) {
+private fun ProgressBar(media: MediaState) {
+    var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
+    LaunchedEffect(media.isPlaying, media.elapsedReportedAt) {
+        now = SystemClock.elapsedRealtime()
+        while (media.isPlaying) {
+            delay(1000)
+            now = SystemClock.elapsedRealtime()
+        }
+    }
     val duration = media.durationSec
     val position = media.positionAt(now)
     val fraction = if (duration != null && duration > 0) (position / duration).toFloat().coerceIn(0f, 1f) else 0f
@@ -338,6 +358,9 @@ private fun formatTime(seconds: Double): String {
 
 /** Rotary pixels per iPhone volume step (~one crown detent / bezel click). */
 private const val CROWN_STEP_PX = 48f
+
+/** How much of the background colour covers the album art. */
+private const val ART_SCRIM_ALPHA = 0.72f
 
 @Suppress("unused")
 private val unusedColorReference: Color = Color.Transparent

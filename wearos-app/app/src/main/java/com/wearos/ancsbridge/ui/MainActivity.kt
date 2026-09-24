@@ -1,6 +1,7 @@
 package com.wearos.ancsbridge.ui
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -20,10 +21,14 @@ class MainActivity : ComponentActivity() {
         private const val EXTRA_OPEN = "open"
         private const val OPEN_MEDIA = "media"
 
+        // NEW_TASK (+ CLEAR_TOP below) is required: these open Orbit from a service, tile,
+        // complication or notification, outside any task, and must reuse the open screen
+        @SuppressLint("WearRecents")
         fun launchIntent(context: Context): Intent =
             Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
         /** Opens straight into Now Playing (tile, complication, ongoing activity, auto-launch). */
+        @SuppressLint("WearRecents")
         fun openMediaIntent(context: Context): Intent =
             launchIntent(context)
                 .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)

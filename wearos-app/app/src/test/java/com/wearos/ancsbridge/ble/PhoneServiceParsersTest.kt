@@ -111,6 +111,31 @@ class PhoneServiceParsersTest {
     }
 
     @Test
+    fun `AMS playback and track updates without a player name still make media available`() {
+        // What an iPhone sends after a reconnect mid-song, once the track changes: no player name
+        val s = applyAll(update(0, 1, "1,1.0,3"), update(2, 3, "180"), update(2, 0, "Artist"), update(2, 2, "Song"))
+        assertTrue(s.available)
+        assertTrue(s.hasTrack)
+        assertEquals("", s.playerName)
+    }
+
+    @Test
+    fun `current state read on connect covers every subscribed attribute`() {
+        assertEquals(
+            listOf(0 to 0, 0 to 1, 0 to 2, 2 to 0, 2 to 1, 2 to 2, 2 to 3, 1 to 0, 1 to 1, 1 to 2, 1 to 3),
+            AmsProtocol.CURRENT_STATE
+        )
+    }
+
+    @Test
+    fun `display title is never blank`() {
+        assertEquals("Song", MediaState(title = "Song", artist = "Artist").displayTitle)
+        assertEquals("Artist", MediaState(artist = "Artist", playerName = "Spotify").displayTitle)
+        assertEquals("Spotify", MediaState(playerName = "Spotify").displayTitle)
+        assertEquals("iPhone", MediaState().displayTitle)
+    }
+
+    @Test
     fun `AMS supported commands`() {
         assertEquals(setOf(0, 1, 2, 3, 4), AmsProtocol.parseSupportedCommands(byteArrayOf(0, 1, 2, 3, 4)))
     }

@@ -7,8 +7,11 @@
 - If the iPhone connects HFP to the watch (Classic pairing from iPhone Settings → Bluetooth), calls could use the watch speaker/mic and Wear OS's native phone UI, including dialing out
 - Unverified: Wear OS may reserve HFP for its companion phone. The app can't start HFP itself (`BluetoothHeadsetClient` is a system API)
 
-### Native media controls (AVRCP)
-- Comes with the Classic link above: Wear OS's own media controls for iPhone playback
+### Native media controls — done another way
+- Wear OS's own media controls now show and drive the iPhone's player through a media session backed by Apple Media Service (see protocol.md). AVRCP would only add audio routing, which needs the Classic link above
+
+### Toolchain migration (AGP 9.1, compileSdk 37)
+- The newest AndroidX releases (core 1.19, Compose 1.12 / BOM 2026.08+, Wear Compose 1.7) refuse to build on AGP 8.13. Taking them means moving to AGP 9.1 (its built-in Kotlin support changes the plugin setup) and installing SDK 37. Until then the libraries stay on the newest versions AGP 8.13 accepts (gotcha 41)
 
 ### iPhone remote (HID) — declined
 - `BluetoothHidDevice` would let the watch act as a Bluetooth keyboard: volume-up triggers the iPhone Camera shutter, media keys work, and the consumer-page Power/Menu usage is how BLE remotes invoke Siri

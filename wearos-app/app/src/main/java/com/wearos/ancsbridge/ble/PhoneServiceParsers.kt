@@ -69,6 +69,12 @@ object AmsProtocol {
         QUEUE_SHUFFLE_MODE.toByte(), QUEUE_REPEAT_MODE.toByte()
     )
 
+    /** Every attribute we subscribe to, as (entity, attribute): read once on connect. */
+    val CURRENT_STATE: List<Pair<Int, Int>> =
+        listOf(SUBSCRIBE_PLAYER, SUBSCRIBE_TRACK, SUBSCRIBE_QUEUE).flatMap { sub ->
+            sub.drop(1).map { (sub[0].toInt() and 0xFF) to (it.toInt() and 0xFF) }
+        }
+
     data class EntityUpdate(val entity: Int, val attribute: Int, val truncated: Boolean, val value: String)
 
     /** Entity Update notification: [EntityID][AttributeID][Flags][UTF-8 value...] */
@@ -99,6 +105,10 @@ object AmsProtocol {
                         state.copy(playbackState = MediaState.PLAYBACK_PAUSED, playbackRate = 0f)
                     } else {
                         state.copy(
+                            // A player is reporting, even if its name has not been sent: iOS
+                            // only sends attributes when they change, so after a reconnect the
+                            // name can be missing while playback and track updates arrive
+                            available = true,
                             playbackState = parts[0].trim().toIntOrNull() ?: MediaState.PLAYBACK_PAUSED,
                             playbackRate = parts[1].trim().toFloatOrNull() ?: 0f,
                             elapsedSec = parts[2].trim().toDoubleOrNull() ?: 0.0,
